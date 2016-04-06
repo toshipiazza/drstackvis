@@ -5,12 +5,11 @@
 #include "utils.h"
 
 typedef struct _mem_ref_t {
-    ushort size; /* mem ref size or instr length */
-    app_pc addr; /* mem ref addr or instr pc */
+    ushort size; /* mem ref size */
+    app_pc addr; /* mem ref addr */
 } mem_ref_t;
 
 #define MAX_NUM_MEM_REFS 4096
-/* The maximum size of buffer for holding mem_refs. */
 #define MEM_BUF_SIZE (sizeof(mem_ref_t) * MAX_NUM_MEM_REFS)
 
 /* thread private log file and counter */
@@ -18,12 +17,10 @@ typedef struct {
     byte      *seg_base;
     mem_ref_t *buf_base;
     file_t     log;
-    uint64     num_refs;
+    bool       written;
 } per_thread_t;
 
 static client_id_t client_id;
-static void  *mutex;    /* for multithread support */
-static uint64 num_refs; /* keep a global memory reference count */
 
 /* Allocated TLS slot offsets */
 enum {
@@ -46,9 +43,15 @@ memtrace(void *drcontext)
 
     data    = drmgr_get_tls_field(drcontext, tls_idx);
     buf_ptr = BUF_PTR(data->seg_base);
-    for (mem_ref = (mem_ref_t *)data->buf_base; mem_ref < buf_ptr; mem_ref++) {
-        dr_fprintf(data->log, ""PFX": %2d\n", mem_ref->addr, mem_ref->size);
-        data->num_refs++;
+
+    for (mem_ref = (mem_ref_t *) data->buf_base; mem_ref < buf_ptr; mem_ref++) {
+        if (data->written) dr_fprintf(data->log, "\t,  ");
+        else {
+            data->written = 1;
+            dr_fprintf(data->log, "\t");
+        }
+        dr_fprintf(data->log, "{ \"addr\": "PFX", \"size\": %2d }\n",
+                   mem_ref->addr, mem_ref->size);
     }
     BUF_PTR(data->seg_base) = data->buf_base;
 }
@@ -98,25 +101,6 @@ insert_save_size(void *drcontext, instrlist_t *ilist, instr_t *where,
 }
 
 static void
-insert_save_pc(void *drcontext, instrlist_t *ilist, instr_t *where,
-               reg_id_t base, reg_id_t scratch, app_pc pc)
-{
-    instr_t *mov1, *mov2;
-    instrlist_insert_mov_immed_ptrsz(drcontext, (ptr_int_t)pc,
-                                     opnd_create_reg(scratch),
-                                     ilist, where, &mov1, &mov2);
-    DR_ASSERT(mov1 != NULL);
-    instr_set_meta(mov1);
-    if (mov2 != NULL)
-        instr_set_meta(mov2);
-    MINSERT(ilist, where,
-            XINST_CREATE_store(drcontext,
-                               OPND_CREATE_MEMPTR(base,
-                                                  offsetof(mem_ref_t, addr)),
-                               opnd_create_reg(scratch)));
-}
-
-static void
 insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                  opnd_t ref, reg_id_t reg_ptr, reg_id_t reg_addr)
 {
@@ -130,30 +114,6 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                                OPND_CREATE_MEMPTR(reg_ptr,
                                                   offsetof(mem_ref_t, addr)),
                                opnd_create_reg(reg_addr)));
-}
-
-/* insert inline code to add an instruction entry into the buffer */
-static void
-instrument_instr(void *drcontext, instrlist_t *ilist, instr_t *where)
-{
-    reg_id_t reg_ptr = IF_X86_ELSE(DR_REG_XCX, DR_REG_R1);
-    reg_id_t reg_tmp = IF_X86_ELSE(DR_REG_XBX, DR_REG_R2);
-    ushort  slot_ptr = SPILL_SLOT_2;
-    ushort  slot_tmp = SPILL_SLOT_3;
-
-    /* We need two scratch registers */
-    dr_save_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
-    dr_save_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
-
-    insert_load_buf_ptr(drcontext, ilist, where, reg_ptr);
-    insert_save_size(drcontext, ilist, where, reg_ptr, reg_tmp,
-                     (ushort)instr_length(drcontext, where));
-    insert_save_pc(drcontext, ilist, where, reg_ptr, reg_tmp,
-                   instr_get_app_pc(where));
-    insert_update_buf_ptr(drcontext, ilist, where, reg_ptr, sizeof(mem_ref_t));
-    /* restore scratch registers */
-    dr_restore_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
-    dr_restore_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
 }
 
 /* insert inline code to add a memory reference info entry into the buffer */
@@ -194,9 +154,6 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
         return DR_EMIT_DEFAULT;
     if (!instr_writes_memory(instr))
         return DR_EMIT_DEFAULT;
-
-    /* insert code to add an entry for app instruction */
-    instrument_instr(drcontext, bb, instr);
 
     /* insert code to add an entry for each memory write opnd */
     for (i = 0; i < instr_num_dsts(instr); i++) {
@@ -252,7 +209,7 @@ event_thread_init(void *drcontext)
     /* put buf_base to TLS as starting buf_ptr */
     BUF_PTR(data->seg_base) = data->buf_base;
 
-    data->num_refs = 0;
+    data->written = 0;
 
     /* We're going to dump our data to a per-thread file.
      * On Windows we need an absolute path so we place it in
@@ -265,6 +222,7 @@ event_thread_init(void *drcontext)
                               DR_FILE_CLOSE_ON_FORK |
 #endif
                               DR_FILE_ALLOW_LARGE);
+    dr_fprintf(data->log, "[\n");
 }
 
 static void
@@ -272,10 +230,8 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_mutex_lock(mutex);
-    num_refs += data->num_refs;
-    dr_mutex_unlock(mutex);
     log_file_close(data->log);
+    dr_fprintf(data->log, "]\n");
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(per_thread_t));
 }
@@ -283,7 +239,6 @@ event_thread_exit(void *drcontext)
 static void
 event_exit(void)
 {
-    dr_log(NULL, LOG_ALL, 1, "Client 'memtrace' num refs seen: "SZFMT"\n", num_refs);
     if (!dr_raw_tls_cfree(tls_offs, MEMTRACE_TLS_COUNT))
         DR_ASSERT(false);
 
@@ -294,7 +249,6 @@ event_exit(void)
         !drmgr_unregister_bb_insertion_event(event_app_instruction))
         DR_ASSERT(false);
 
-    dr_mutex_destroy(mutex);
     drutil_exit();
     drmgr_exit();
 }
@@ -318,7 +272,6 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
         DR_ASSERT(false);
 
     client_id = id;
-    mutex = dr_mutex_create();
 
     tls_idx = drmgr_register_tls_field();
     DR_ASSERT(tls_idx != -1);
