@@ -1,6 +1,9 @@
-DrStackVis TODO
-===============
+DrStackVis
+==========
 
+Stack Visualizer written using DynamoRIO.
+
+## TODO
 [x] remove stack reads
 [x] remove instruction reads
 [x] output json
@@ -9,7 +12,7 @@ DrStackVis TODO
 [ ] output write values
 [ ] output instruction
 
-## Later time
+### Later Time
 [ ] output current output
 [ ] output tick at which write occurs
 [ ] keep track of callstack information
@@ -18,8 +21,7 @@ DrStackVis TODO
 > some other file descriptor, then use fdopen to read it in
 > incrementally
 
-JSON
-====
+## JSON Output
 
 ```
 [
@@ -31,3 +33,9 @@ JSON
   ...
 ]
 ```
+
+# Notice
+The code here was heavily modified from `utils.[ch]` and `memtrace_simple.c`,
+which are included in the sample files of a standard DynamoRIO distribution.
+Both of these files are included in this project. These files are both
+distributed under the BSD 3 clause license.
