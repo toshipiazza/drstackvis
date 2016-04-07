@@ -28,7 +28,12 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 # DAMAGE.
 
-cmake_minimum_required(VERSION 3.0)
-project(drstackvis)
-
-add_subdirectory(stackvis-dynamorio)
+add_library(stackvis SHARED stackvis.c utils.c)
+find_package(DynamoRIO)
+if (NOT DynamoRIO_FOUND)
+  message(FATAL_ERROR "DynamoRIO package required to build")
+endif()
+configure_DynamoRIO_client(stackvis)
+use_DynamoRIO_extension(stackvis "drmgr")
+use_DynamoRIO_extension(stackvis "drutil")
+use_DynamoRIO_extension(stackvis "drx")

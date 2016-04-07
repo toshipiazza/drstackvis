@@ -77,12 +77,11 @@ memtrace(void *drcontext)
     buf_ptr = BUF_PTR(data->seg_base);
 
     for (mem_ref = (mem_ref_t *) data->buf_base; mem_ref < buf_ptr; mem_ref++) {
-        if (data->written) dr_fprintf(data->log, "\t,  ");
+        if (data->written) dr_fprintf(data->log, ",");
         else {
             data->written = 1;
-            dr_fprintf(data->log, "\t");
         }
-        dr_fprintf(data->log, "{ \"addr\": "PFX", \"size\": %2d }\n",
+        dr_fprintf(data->log, "{\"addr\": %u,\"size\": %2d }",
                    mem_ref->addr, mem_ref->size);
     }
     BUF_PTR(data->seg_base) = data->buf_base;
@@ -254,7 +253,7 @@ event_thread_init(void *drcontext)
                               DR_FILE_CLOSE_ON_FORK |
 #endif
                               DR_FILE_ALLOW_LARGE);
-    dr_fprintf(data->log, "[\n");
+    dr_fprintf(data->log, "[");
 }
 
 static void
@@ -262,8 +261,8 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
-    log_file_close(data->log);
     dr_fprintf(data->log, "]\n");
+    log_file_close(data->log);
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(per_thread_t));
 }
