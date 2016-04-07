@@ -11,20 +11,21 @@ logic couldn't all be in a single place!
 ## TODO DynamoRIO Plugin
 * [x] remove stack reasd
 * [x] remove instruction reads
-* [x] output json
-    * [ ] use jannson or other small c library, wrap malloc
-* [ ] filter writes to stack values only
-* [ ] output write values
-* [ ] output instruction
+* [x] output valid json
+* [ ] filter writes to stack values only, so that the termbox interface doesn't hang
+* [ ] output write values instead of just addreses written to
+* [ ] output instruction at which write occurs
 
 ### Later Time
-* [ ] output current output
-* [ ] json denotes ret, so we can "remove variables from scope" incrementally
+* [ ] output current output of running program
+* [ ] json specifies whether instruction was a return statement, so we know the
+      true stack boundary
+   * [ ] alternatively, just output esp (and ebp) at each iteration
 * [ ] determine whether a pointer is on the stack or heap and color accordingly
 
 > NOTE: to output current output, use dup2 to duplicate to
 > some other file descriptor, then use fdopen to read it in
-> incrementally
+> incrementally, every time `memtrace` is called
 
 ## TODO Termbox Frontend
 * [X] simple json parsing
