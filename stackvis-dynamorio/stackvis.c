@@ -31,17 +31,16 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 #include "dr_api.h"
 #include "drmgr.h"
 #include "drutil.h"
 #include "utils.h"
 
-/* TODO: output stack pointer base */
-/* TODO: output frame pointer at current write */
 typedef struct _mem_ref_t {
-    ushort size;  /* mem write size */
-    app_pc addr;  /* mem write addr */
-    app_pc value; /* mem write value */
+    ushort size;
+    app_pc addr;
+    app_pc sptr;
 } mem_ref_t;
 
 #define MAX_NUM_MEM_REFS 4096
@@ -79,8 +78,25 @@ memtrace(void *drcontext)
     buf_ptr = BUF_PTR(data->seg_base);
 
     for (mem_ref = (mem_ref_t *) data->buf_base; mem_ref < buf_ptr; mem_ref++) {
-        dr_fprintf(data->log, "addr:%u size:%2d value:%u\n",
-                   mem_ref->addr, mem_ref->size, mem_ref->value);
+        dr_fprintf(data->log, "addr:%u size:%d sptr:%u wmem:",
+                   mem_ref->addr, mem_ref->size, mem_ref->sptr);
+        switch (mem_ref->size) {
+        case 1:
+            dr_fprintf(data->log, "%u\n", *(uint8_t *) mem_ref->addr);
+            break;
+        case 2:
+            dr_fprintf(data->log, "%u\n", *(uint16_t *) mem_ref->addr);
+            break;
+        case 4:
+            dr_fprintf(data->log, "%u\n", *(uint32_t *) mem_ref->addr);
+            break;
+        case 8:
+            dr_fprintf(data->log, "%u\n", *(uint64_t *) mem_ref->addr);
+            break;
+        default:
+            dr_fprintf(data->log, "\n");
+            break;
+        }
     }
     BUF_PTR(data->seg_base) = data->buf_base;
 }
@@ -130,6 +146,23 @@ insert_save_size(void *drcontext, instrlist_t *ilist, instr_t *where,
 }
 
 static void
+insert_save_sptr(void *drcontext, instrlist_t *ilist, instr_t *where,
+                 reg_id_t base, reg_id_t scratch)
+{
+    scratch = reg_resize_to_opsz(scratch, OPSZ_8);
+    /* steal value of stack pointer here */
+    MINSERT(ilist, where,
+            XINST_CREATE_move(drcontext,
+                              opnd_create_reg(scratch),
+                              opnd_create_reg(DR_REG_XSP)));
+    MINSERT(ilist, where,
+            XINST_CREATE_store(drcontext,
+                               OPND_CREATE_MEMPTR(base,
+                                                  offsetof(mem_ref_t, sptr)),
+                               opnd_create_reg(scratch)));
+}
+
+static void
 insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                  opnd_t ref, reg_id_t reg_ptr, reg_id_t reg_addr)
 {
@@ -137,49 +170,33 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
     /* we use reg_ptr as scratch to get addr */
     ok = drutil_insert_get_mem_addr(drcontext, ilist, where, ref, reg_addr, reg_ptr);
     DR_ASSERT(ok);
+
+    /* write to offset */
     insert_load_buf_ptr(drcontext, ilist, where, reg_ptr);
     MINSERT(ilist, where,
             XINST_CREATE_store(drcontext,
                                OPND_CREATE_MEMPTR(reg_ptr,
                                                   offsetof(mem_ref_t, addr)),
                                opnd_create_reg(reg_addr)));
-
-    /* move value stored at reg_ptr into itself and load it */
-    reg_id_t reg_value = IF_X86_ELSE(DR_REG_XDX, DR_REG_R3);
-    ushort   slot_value = SPILL_SLOT_4;
-    dr_save_reg(drcontext, ilist, where, reg_value, slot_value);
-
-    MINSERT(ilist, where,
-            XINST_CREATE_load(drcontext,
-                              opnd_create_reg(reg_value),
-                              OPND_CREATE_MEMPTR(reg_addr, 0)));
-
-    dr_restore_reg(drcontext, ilist, where, reg_value, slot_value);
-    /* MINSERT(ilist, where, */
-    /*         XINST_CREATE_store(drcontext, */
-    /*                            OPND_CREATE_MEMPTR(reg_ptr, */
-    /*                                               offsetof(mem_ref_t, value)), */
-    /*                            opnd_create_reg(reg_addr))); */
 }
 
 /* insert inline code to add a memory reference info entry into the buffer */
 static void
 instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
 {
-    /* TODO: dr_save_reg on esp, insert_save_frame_ptr */
     reg_id_t reg_ptr = IF_X86_ELSE(DR_REG_XCX, DR_REG_R1);
     reg_id_t reg_tmp = IF_X86_ELSE(DR_REG_XBX, DR_REG_R2);
-    ushort  slot_ptr = SPILL_SLOT_2;
-    ushort  slot_tmp = SPILL_SLOT_3;
+    ushort slot_ptr  = SPILL_SLOT_2;
+    ushort slot_tmp  = SPILL_SLOT_3;
+    ushort size;
 
-    /* We need two scratch registers */
     dr_save_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
     dr_save_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
 
-    /* save_addr should be called first as reg_ptr or reg_tmp maybe used in ref */
     insert_save_addr(drcontext, ilist, where, ref, reg_ptr, reg_tmp);
-    insert_save_size(drcontext, ilist, where, reg_ptr, reg_tmp,
-                     (ushort)drutil_opnd_mem_size_in_bytes(ref, where));
+    size = drutil_opnd_mem_size_in_bytes(ref, where);
+    insert_save_size(drcontext, ilist, where, reg_ptr, reg_tmp, size);
+    insert_save_sptr(drcontext, ilist, where, reg_ptr, reg_tmp);
     insert_update_buf_ptr(drcontext, ilist, where, reg_ptr, sizeof(mem_ref_t));
 
     /* restore scratch registers */
@@ -219,7 +236,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
          * exclusive monitor state.
          */
         IF_ARM(&& !instr_is_exclusive_store(instr)))
-        dr_insert_clean_call(drcontext, bb, instr, (void *)clean_call, false, 0);
+        dr_insert_clean_call(drcontext, bb, instr_get_next(instr), (void *) clean_call, false, 0);
 
     return DR_EMIT_DEFAULT;
 }
@@ -267,7 +284,6 @@ event_thread_init(void *drcontext)
                               DR_FILE_CLOSE_ON_FORK |
 #endif
                               DR_FILE_ALLOW_LARGE);
-    /* TODO: print out base pointer to stack here? */
 }
 
 static void
