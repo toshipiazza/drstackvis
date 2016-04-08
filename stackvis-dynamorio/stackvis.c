@@ -36,9 +36,12 @@
 #include "drutil.h"
 #include "utils.h"
 
+/* TODO: output stack pointer base */
+/* TODO: output frame pointer at current write */
 typedef struct _mem_ref_t {
-    ushort size; /* mem ref size */
-    app_pc addr; /* mem ref addr */
+    ushort size;  /* mem write size */
+    app_pc addr;  /* mem write addr */
+    app_pc value; /* mem write value */
 } mem_ref_t;
 
 #define MAX_NUM_MEM_REFS 4096
@@ -49,7 +52,6 @@ typedef struct {
     byte      *seg_base;
     mem_ref_t *buf_base;
     file_t     log;
-    bool       written;
 } per_thread_t;
 
 static client_id_t client_id;
@@ -77,12 +79,8 @@ memtrace(void *drcontext)
     buf_ptr = BUF_PTR(data->seg_base);
 
     for (mem_ref = (mem_ref_t *) data->buf_base; mem_ref < buf_ptr; mem_ref++) {
-        if (data->written) dr_fprintf(data->log, ",");
-        else {
-            data->written = 1;
-        }
-        dr_fprintf(data->log, "{\"addr\": %u,\"size\": %2d }",
-                   mem_ref->addr, mem_ref->size);
+        dr_fprintf(data->log, "addr:%u size:%2d value:%u\n",
+                   mem_ref->addr, mem_ref->size, mem_ref->value);
     }
     BUF_PTR(data->seg_base) = data->buf_base;
 }
@@ -145,12 +143,30 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                                OPND_CREATE_MEMPTR(reg_ptr,
                                                   offsetof(mem_ref_t, addr)),
                                opnd_create_reg(reg_addr)));
+
+    /* move value stored at reg_ptr into itself and load it */
+    reg_id_t reg_value = IF_X86_ELSE(DR_REG_XDX, DR_REG_R3);
+    ushort   slot_value = SPILL_SLOT_4;
+    dr_save_reg(drcontext, ilist, where, reg_value, slot_value);
+
+    MINSERT(ilist, where,
+            XINST_CREATE_load(drcontext,
+                              opnd_create_reg(reg_value),
+                              OPND_CREATE_MEMPTR(reg_addr, 0)));
+
+    dr_restore_reg(drcontext, ilist, where, reg_value, slot_value);
+    /* MINSERT(ilist, where, */
+    /*         XINST_CREATE_store(drcontext, */
+    /*                            OPND_CREATE_MEMPTR(reg_ptr, */
+    /*                                               offsetof(mem_ref_t, value)), */
+    /*                            opnd_create_reg(reg_addr))); */
 }
 
 /* insert inline code to add a memory reference info entry into the buffer */
 static void
 instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
 {
+    /* TODO: dr_save_reg on esp, insert_save_frame_ptr */
     reg_id_t reg_ptr = IF_X86_ELSE(DR_REG_XCX, DR_REG_R1);
     reg_id_t reg_tmp = IF_X86_ELSE(DR_REG_XBX, DR_REG_R2);
     ushort  slot_ptr = SPILL_SLOT_2;
@@ -240,8 +256,6 @@ event_thread_init(void *drcontext)
     /* put buf_base to TLS as starting buf_ptr */
     BUF_PTR(data->seg_base) = data->buf_base;
 
-    data->written = 0;
-
     /* We're going to dump our data to a per-thread file.
      * On Windows we need an absolute path so we place it in
      * the same directory as our library. We could also pass
@@ -253,7 +267,7 @@ event_thread_init(void *drcontext)
                               DR_FILE_CLOSE_ON_FORK |
 #endif
                               DR_FILE_ALLOW_LARGE);
-    dr_fprintf(data->log, "[");
+    /* TODO: print out base pointer to stack here? */
 }
 
 static void
@@ -261,7 +275,6 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_fprintf(data->log, "]\n");
     log_file_close(data->log);
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(per_thread_t));
