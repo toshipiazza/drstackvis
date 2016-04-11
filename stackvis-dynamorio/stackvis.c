@@ -40,7 +40,6 @@
 typedef struct _mem_ref_t {
     ushort size;
     app_pc addr;
-    app_pc sptr;
 } mem_ref_t;
 
 #define MAX_NUM_MEM_REFS 4096
@@ -82,7 +81,7 @@ dereference_pointer(app_pc pc, ushort size)
 }
 
 static void
-memtrace(void *drcontext)
+memtrace(void *drcontext, app_pc stk_ptr)
 {
     per_thread_t *data;
     mem_ref_t *mem_ref, *buf_ptr;
@@ -91,18 +90,23 @@ memtrace(void *drcontext)
     buf_ptr = BUF_PTR(data->seg_base);
     mem_ref = (mem_ref_t *) data->buf_base;
 
+    /* get the stack base; doesn't really need to be atomic... */
     if (data->stk_base == 0) {
-        dr_query_memory(mem_ref->sptr, &data->stk_base, NULL, NULL);
+        /* stack starts at top of memory, but dr_query_memory
+         * gives us the bottom of it... */
+        size_t sz;
+        dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
+        data->stk_base += sz;
     }
 
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
-        if (mem_ref->addr >= data->stk_base) {
-            dr_fprintf(data->log, "\t , { \"addr\":%10u\n"
+        if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
+            dr_fprintf(data->log, "\t , { \"addr\":%u\n"
                                   "\t\t , \"size\":%d\n"
                                   "\t\t , \"sptr\":%u\n"
                                   "\t\t , \"wmem\":%-10u }\n",
-                        mem_ref->addr, mem_ref->size, mem_ref->sptr,
+                        mem_ref->addr, mem_ref->size, stk_ptr,
                         dereference_pointer(mem_ref->addr, mem_ref->size));
         }
     }
@@ -111,10 +115,10 @@ memtrace(void *drcontext)
 
 /* clean_call dumps the memory reference info to the log file */
 static void
-clean_call(void)
+clean_call(app_pc stk_ptr)
 {
     void *drcontext = dr_get_current_drcontext();
-    memtrace(drcontext);
+    memtrace(drcontext, stk_ptr);
 }
 
 static void
@@ -154,23 +158,6 @@ insert_save_size(void *drcontext, instrlist_t *ilist, instr_t *where,
 }
 
 static void
-insert_save_sptr(void *drcontext, instrlist_t *ilist, instr_t *where,
-                 reg_id_t base, reg_id_t scratch)
-{
-    scratch = reg_resize_to_opsz(scratch, OPSZ_8);
-    /* steal value of stack pointer here */
-    MINSERT(ilist, where,
-            XINST_CREATE_move(drcontext,
-                              opnd_create_reg(scratch),
-                              opnd_create_reg(DR_REG_XSP)));
-    MINSERT(ilist, where,
-            XINST_CREATE_store(drcontext,
-                               OPND_CREATE_MEMPTR(base,
-                                                  offsetof(mem_ref_t, sptr)),
-                               opnd_create_reg(scratch)));
-}
-
-static void
 insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                  opnd_t ref, reg_id_t reg_ptr, reg_id_t reg_addr)
 {
@@ -204,7 +191,6 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     insert_save_addr(drcontext, ilist, where, ref, reg_ptr, reg_tmp);
     size = drutil_opnd_mem_size_in_bytes(ref, where);
     insert_save_size(drcontext, ilist, where, reg_ptr, reg_tmp, size);
-    insert_save_sptr(drcontext, ilist, where, reg_ptr, reg_tmp);
     insert_update_buf_ptr(drcontext, ilist, where, reg_ptr, sizeof(mem_ref_t));
 
     /* restore scratch registers */
@@ -233,7 +219,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
             instrument_mem(drcontext, bb, instr, instr_get_dst(instr, i));
     }
 
-    /* insert code to call clean_call for processing the buffer */
+    /* insert code to call clean_call for processing the buffer, along with stack pointer */
     if (/* XXX i#1702: it is ok to skip a few clean calls on predicated instructions,
          * since the buffer will be dumped later by other clean calls.
          */
@@ -244,7 +230,9 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
          * exclusive monitor state.
          */
         IF_ARM(&& !instr_is_exclusive_store(instr)))
-        dr_insert_clean_call(drcontext, bb, instr_get_next(instr), (void *) clean_call, false, 0);
+        dr_insert_clean_call(drcontext, bb, instr_get_next(instr), (void *) clean_call,
+                             false, 1, opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP)));
+    /* instrlist_disassemble(drcontext, tag, bb, STDOUT); */
 
     return DR_EMIT_DEFAULT;
 }

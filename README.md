@@ -7,9 +7,9 @@ Stack Visualizer written using DynamoRIO. Frontend is TBA.
 The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 
 ## TODO DynamoRIO Plugin
-* [ ] write esp AFTER write occurs, current esp values are WRONG
-  * [ ] pass into clean call?
-  * [ ] make it cross-architecture
+* [x] write esp AFTER write occurs, current esp values are WRONG
+  * [x] pass into clean call?
+  * [x] make it cross-architecture
 * [ ] output current output of running program
 * [ ] output instruction at which write occurs (see `type` in `memtrace_simple.c`)
 * [ ] determine whether a pointer is on the stack or heap and color accordingly
