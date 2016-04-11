@@ -51,6 +51,7 @@ typedef struct {
     byte      *seg_base;
     mem_ref_t *buf_base;
     file_t     log;
+    app_pc     stk_base;
 } per_thread_t;
 
 static client_id_t client_id;
@@ -88,11 +89,18 @@ memtrace(void *drcontext)
 
     data    = drmgr_get_tls_field(drcontext, tls_idx);
     buf_ptr = BUF_PTR(data->seg_base);
+    mem_ref = (mem_ref_t *) data->buf_base;
 
-    for (mem_ref = (mem_ref_t *) data->buf_base; mem_ref < buf_ptr; mem_ref++) {
-        dr_fprintf(data->log, "addr:%u size:%d sptr:%u wmem:%u\n",
-                   mem_ref->addr, mem_ref->size, mem_ref->sptr,
-                   dereference_pointer(mem_ref->addr, mem_ref->size));
+    if (data->stk_base == 0) {
+        dr_query_memory(mem_ref->sptr, &data->stk_base, NULL, NULL);
+    }
+
+    /* TODO: output json? */
+    for (; mem_ref < buf_ptr; mem_ref++) {
+        if (mem_ref->addr > data->stk_base && mem_ref->addr <= mem_ref->sptr)
+            dr_fprintf(data->log, "addr:%u size:%d sptr:%u wmem:%u\n",
+                       mem_ref->addr, mem_ref->size, mem_ref->sptr,
+                       dereference_pointer(mem_ref->addr, mem_ref->size));
     }
     BUF_PTR(data->seg_base) = data->buf_base;
 }
@@ -265,6 +273,7 @@ event_thread_init(void *drcontext)
     data->buf_base = dr_raw_mem_alloc(MEM_BUF_SIZE,
                                       DR_MEMPROT_READ | DR_MEMPROT_WRITE,
                                       NULL);
+    data->stk_base = NULL;
     DR_ASSERT(data->seg_base != NULL && data->buf_base != NULL);
     /* put buf_base to TLS as starting buf_ptr */
     BUF_PTR(data->seg_base) = data->buf_base;
@@ -287,6 +296,7 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
+    dr_fprintf(data->log, "stk_base: %u\n", data->stk_base);
     log_file_close(data->log);
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(per_thread_t));

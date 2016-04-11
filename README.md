@@ -7,13 +7,6 @@ Stack Visualizer written using DynamoRIO. Frontend is TBA.
 The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 
 ## TODO DynamoRIO Plugin
-* [x] remove stack reasd
-* [x] remove instruction reads
-* [x] write frame pointer at end of each write
-  * [ ] write the base pointer at the beginning
-* [x] output write values instead of just addreses written to
-
-### Later Time
 * [ ] output current output of running program
 * [ ] output instruction at which write occurs
 * [ ] determine whether a pointer is on the stack or heap and color accordingly
@@ -25,13 +18,16 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 ## JSON Output (tentative)
 
 ```
-[
-  { "addr": 0x08045890,
-    "size": 8,
-    "wmem": 0xDEADBEEF,
-    "sptr": 0xffffffff },
-    ...
-]
+{
+  "writes": [
+    { "addr": 0x08045890,
+      "size": 8,
+      "wmem": 0xDEADBEEF,
+      "sptr": 0xfffffff },
+      ...
+  ],
+  "stk_base": 0xfffffff
+}
 ```
 
 # Notice
