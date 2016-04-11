@@ -6,6 +6,8 @@ import (
 )
 
 // Write struct, assuming x86-64 or 64bit arm
+// NOTE: that we must ignore the first "dummy"
+// write (all zeros)
 type write struct {
   size uint16 `json:size` // size of write
   addr uint64 `json:addr` // addr at which write happened
