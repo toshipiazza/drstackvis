@@ -97,8 +97,9 @@ memtrace(void *drcontext)
 
     /* TODO: output json? */
     for (; mem_ref < buf_ptr; mem_ref++) {
-        if (mem_ref->addr > data->stk_base && mem_ref->addr <= mem_ref->sptr)
-            dr_fprintf(data->log, "addr:%u size:%d sptr:%u wmem:%u\n",
+        /* filter by whether write occurs on the stack or not */
+        if (mem_ref->addr >= data->stk_base)
+            dr_fprintf(data->log, "addr:"PFX" size:%d sptr:"PFX" wmem:"PFX"\n",
                        mem_ref->addr, mem_ref->size, mem_ref->sptr,
                        dereference_pointer(mem_ref->addr, mem_ref->size));
     }
@@ -296,7 +297,7 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_fprintf(data->log, "stk_base: %u\n", data->stk_base);
+    dr_fprintf(data->log, "stk_base: "PFX"\n", data->stk_base);
     log_file_close(data->log);
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(per_thread_t));
