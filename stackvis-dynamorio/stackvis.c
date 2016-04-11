@@ -68,6 +68,18 @@ static int      tls_idx;
 
 #define MINSERT instrlist_meta_preinsert
 
+static uint64_t
+dereference_pointer(app_pc pc, ushort size)
+{
+    switch (size) {
+    case 1: return *(uint8_t *) pc;
+    case 2: return *(uint16_t *) pc;
+    case 4: return *(uint32_t *) pc;
+    case 8: return *(uint64_t *) pc;
+    default: return 0;
+    }
+}
+
 static void
 memtrace(void *drcontext)
 {
@@ -78,25 +90,9 @@ memtrace(void *drcontext)
     buf_ptr = BUF_PTR(data->seg_base);
 
     for (mem_ref = (mem_ref_t *) data->buf_base; mem_ref < buf_ptr; mem_ref++) {
-        dr_fprintf(data->log, "addr:%u size:%d sptr:%u wmem:",
-                   mem_ref->addr, mem_ref->size, mem_ref->sptr);
-        switch (mem_ref->size) {
-        case 1:
-            dr_fprintf(data->log, "%u\n", *(uint8_t *) mem_ref->addr);
-            break;
-        case 2:
-            dr_fprintf(data->log, "%u\n", *(uint16_t *) mem_ref->addr);
-            break;
-        case 4:
-            dr_fprintf(data->log, "%u\n", *(uint32_t *) mem_ref->addr);
-            break;
-        case 8:
-            dr_fprintf(data->log, "%u\n", *(uint64_t *) mem_ref->addr);
-            break;
-        default:
-            dr_fprintf(data->log, "\n");
-            break;
-        }
+        dr_fprintf(data->log, "addr:%u size:%d sptr:%u wmem:%u\n",
+                   mem_ref->addr, mem_ref->size, mem_ref->sptr,
+                   dereference_pointer(mem_ref->addr, mem_ref->size));
     }
     BUF_PTR(data->seg_base) = data->buf_base;
 }

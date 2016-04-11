@@ -28,7 +28,7 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 [
   { "addr": 0x08045890,
     "size": 8,
-    "wmem": 0xDEADBEEF,   // TODO
+    "wmem": 0xDEADBEEF,
     "sptr": 0xffffffff },
     ...
 ]
