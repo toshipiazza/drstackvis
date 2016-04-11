@@ -18,11 +18,11 @@ type address struct {
   init bool
 }
 
-type stack struct {
+type Stack struct {
   writes []write   `json:writes`   // records all writes *to the stack*
   stack  []address `json:ignore`
-  bStack uint64    `json:stk_base` // address of base of stack (does not change)
-  tStack uint64    `json:ignore`   // address of top of stack (varies with tick)
+  BStack uint64    `json:stk_base` // address of base of stack (does not change)
+  TStack uint64    `json:ignore`   // address of top of stack (varies with tick)
   tick uint64      `json:ignore`   // index into Writes array
 }
 
@@ -32,14 +32,6 @@ func InitStack(json_writes string) (s stack) {
   s.tick = 0
   s.stack = make([]Address, 0)
   s.computeStackByteString(0)
-}
-
-func (s *stack) GetBottomOfStack() {
-  return s.bStack
-}
-
-func (s *stack) GetTopOfStack() {
-  return s.tStack
 }
 
 func (s *stack) SetCurrentTick(tick uint64) {
@@ -59,7 +51,7 @@ func (s *stack) GetValueAtAddr(addr uint64, size uint16) (uint8, bool) {
 
 // private, helper functions
 func (s *stack) addr2Index(addr uint64) int {
-  return addr - s.bStack
+  return addr - s.BStack
 }
 
 func (s *stack) computeStackByteString(atTick int) {

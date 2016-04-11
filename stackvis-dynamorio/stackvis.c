@@ -73,10 +73,10 @@ static uint64_t
 dereference_pointer(app_pc pc, ushort size)
 {
     switch (size) {
-    case 1: return *(uint8_t *) pc;
-    case 2: return *(uint16_t *) pc;
-    case 4: return *(uint32_t *) pc;
-    case 8: return *(uint64_t *) pc;
+    case 1:  return *(uint8_t *)  pc;
+    case 2:  return *(uint16_t *) pc;
+    case 4:  return *(uint32_t *) pc;
+    case 8:  return *(uint64_t *) pc;
     default: return 0;
     }
 }
@@ -95,13 +95,16 @@ memtrace(void *drcontext)
         dr_query_memory(mem_ref->sptr, &data->stk_base, NULL, NULL);
     }
 
-    /* TODO: output json? */
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
-        if (mem_ref->addr >= data->stk_base)
-            dr_fprintf(data->log, "addr:"PFX" size:%d sptr:"PFX" wmem:"PFX"\n",
-                       mem_ref->addr, mem_ref->size, mem_ref->sptr,
-                       dereference_pointer(mem_ref->addr, mem_ref->size));
+        if (mem_ref->addr >= data->stk_base) {
+            dr_fprintf(data->log, "\t , { \"addr\":%10u\n"
+                                  "\t\t , \"size\":%d\n"
+                                  "\t\t , \"sptr\":%u\n"
+                                  "\t\t , \"wmem\":%-10u }\n",
+                        mem_ref->addr, mem_ref->size, mem_ref->sptr,
+                        dereference_pointer(mem_ref->addr, mem_ref->size));
+        }
     }
     BUF_PTR(data->seg_base) = data->buf_base;
 }
@@ -290,6 +293,13 @@ event_thread_init(void *drcontext)
                               DR_FILE_CLOSE_ON_FORK |
 #endif
                               DR_FILE_ALLOW_LARGE);
+    /* output json header and dummy write for ease of implementation */
+    dr_fprintf(data->log, "{\n"
+                          "\t\"writes\": [\n"
+                          "\t\t { \"addr\": 0\n"
+                          "\t\t , \"size\": 0\n"
+                          "\t\t , \"sptr\": 0\n"
+                          "\t\t , \"wmem\": 0         }\n");
 }
 
 static void
@@ -297,7 +307,9 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_fprintf(data->log, "stk_base: "PFX"\n", data->stk_base);
+    dr_fprintf(data->log, "\t]\n"
+                          ", \"stk_base\":%u\n"
+                          "}\n", data->stk_base);
     log_file_close(data->log);
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(per_thread_t));

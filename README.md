@@ -8,8 +8,10 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 
 ## TODO DynamoRIO Plugin
 * [ ] write esp AFTER write occurs, current esp values are WRONG
+  * [ ] pass into clean call?
+  * [ ] make it cross-architecture
 * [ ] output current output of running program
-* [ ] output instruction at which write occurs
+* [ ] output instruction at which write occurs (see `type` in `memtrace_simple.c`)
 * [ ] determine whether a pointer is on the stack or heap and color accordingly
 
 > NOTE: to output current output, use dup2 to duplicate to
@@ -24,10 +26,10 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
     { "addr": 0x08045890,
       "size": 8,
       "wmem": 0xDEADBEEF,
-      "sptr": 0xfffffff },
+      "sptr": 0xffffffff }, // this is ESP
       ...
   ],
-  "stk_base": 0xfffffff
+  "stk_base": 0xffffffff
 }
 ```
 
