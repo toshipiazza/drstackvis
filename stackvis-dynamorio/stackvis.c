@@ -63,6 +63,7 @@ enum {
 static reg_id_t tls_seg;
 static uint     tls_offs;
 static int      tls_idx;
+static file_t   prog_stdout;
 #define TLS_SLOT(tls_base, enum_val) (void **)((byte *)(tls_base)+tls_offs+(enum_val))
 #define BUF_PTR(tls_base) *(mem_ref_t **)TLS_SLOT(tls_base, MEMTRACE_TLS_OFFS_BUF_PTR)
 
@@ -90,22 +91,35 @@ memtrace(void *drcontext, app_pc stk_ptr)
     buf_ptr = BUF_PTR(data->seg_base);
     mem_ref = (mem_ref_t *) data->buf_base;
 
-    /* get the stack base; doesn't really need to be atomic... */
+    /* get the stack base */
     if (data->stk_base == 0) {
         /* stack starts at top of memory, but dr_query_memory
          * gives us the bottom of it... */
         size_t sz;
-        dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
+        bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
+        DR_ASSERT(ok);
         data->stk_base += sz;
     }
+
+    /* TODO: get stdout */
+#if 0
+    size_t sz = 100;
+    char *progout = dr_map_file(prog_stdout, &sz, 0, NULL,
+                            DR_MEMPROT_READ | DR_MEMPROT_WRITE,
+                            DR_MAP_PRIVATE | DR_MAP_CACHE_REACHABLE);
+    if (progout) {
+        dr_printf("HERE! %s", progout);
+    }
+    dr_unmap_file(progout, sz);
+#endif
 
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
         if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
-            dr_fprintf(data->log, "\t , { \"addr\":%u\n"
-                                  "\t\t , \"size\":%d\n"
-                                  "\t\t , \"sptr\":%u\n"
-                                  "\t\t , \"wmem\":%-10u }\n",
+            dr_fprintf(data->log, "   , { \"addr\":%u\n"
+                                  "     , \"size\":%d\n"
+                                  "     , \"sptr\":%u\n"
+                                  "     , \"wmem\":%-10u }\n",
                         mem_ref->addr, mem_ref->size, stk_ptr,
                         dereference_pointer(mem_ref->addr, mem_ref->size));
         }
@@ -232,7 +246,6 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
         IF_ARM(&& !instr_is_exclusive_store(instr)))
         dr_insert_clean_call(drcontext, bb, instr_get_next(instr), (void *) clean_call,
                              false, 1, opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP)));
-    /* instrlist_disassemble(drcontext, tag, bb, STDOUT); */
 
     return DR_EMIT_DEFAULT;
 }
@@ -275,19 +288,18 @@ event_thread_init(void *drcontext)
      * the same directory as our library. We could also pass
      * in a path as a client argument.
      */
-    data->log = log_file_open(client_id, drcontext, NULL /* using client lib path */,
-                              "memtrace",
+    data->log = log_file_open(client_id, drcontext, NULL, "drstackvis",
 #ifndef WINDOWS
                               DR_FILE_CLOSE_ON_FORK |
 #endif
                               DR_FILE_ALLOW_LARGE);
     /* output json header and dummy write for ease of implementation */
     dr_fprintf(data->log, "{\n"
-                          "\t\"writes\": [\n"
-                          "\t\t { \"addr\": 0\n"
-                          "\t\t , \"size\": 0\n"
-                          "\t\t , \"sptr\": 0\n"
-                          "\t\t , \"wmem\": 0         }\n");
+                          "  \"writes\": [\n"
+                          "     { \"addr\": 0\n"
+                          "     , \"size\": 0\n"
+                          "     , \"sptr\": 0\n"
+                          "     , \"wmem\": 0         }\n");
 }
 
 static void
@@ -295,7 +307,7 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_fprintf(data->log, "\t]\n"
+    dr_fprintf(data->log, "  ]\n"
                           ", \"stk_base\":%u\n"
                           "}\n", data->stk_base);
     log_file_close(data->log);
@@ -318,6 +330,7 @@ event_exit(void)
 
     drutil_exit();
     drmgr_exit();
+    dr_close_file(prog_stdout);
 }
 
 DR_EXPORT void
@@ -349,7 +362,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     if (!dr_raw_tls_calloc(&tls_seg, &tls_offs, MEMTRACE_TLS_COUNT, 0))
         DR_ASSERT(false);
 
-    /* make it easy to tell, by looking at log file, which client executed */
-    dr_log(NULL, LOG_ALL, 1, "Client 'memtrace' initializing\n");
+    /* duplicate stdout of running application */
+    prog_stdout = dr_dup_file_handle(STDOUT);
 }
 /* vim:set tabstop=4 shiftwidth=4: */

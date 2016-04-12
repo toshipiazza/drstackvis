@@ -10,7 +10,9 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 * [x] write esp AFTER write occurs, current esp values are WRONG
   * [x] pass into clean call?
   * [x] make it cross-architecture
-* [ ] output current output of running program
+* [ ] output current output of running program (Base64 encoding, in place!)
+  * Read in stdout with mmap. Use read and write protections so we can just
+    base64 encode it in place.
 * [ ] output instruction at which write occurs (see `type` in `memtrace_simple.c`)
 * [ ] determine whether a pointer is on the stack or heap and color accordingly
 
@@ -36,6 +38,5 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 # Notice
 The plugin here was heavily modified from `utils.[ch]` and `memtrace_simple.c`,
 which are included in the sample files of a standard DynamoRIO distribution.
-Both of these files are included in this project. These files are both
-distributed under the BSD 3 clause license. The code in `drstackvis.c` is
-distributed under the same license.
+These files are both distributed under the BSD 3 clause license. The code in
+`drstackvis.c` is distributed under the same license.
