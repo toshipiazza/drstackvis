@@ -30,10 +30,10 @@ type Stack struct {
 
 func InitStack(json_writes string) (s stack) {
   json.Unmarshal(json_writes, &s)
-  s.tStack = s.writes[0].sptr
+  s.tStack = s.writes[1].sptr
   s.tick = 0
   s.stack = make([]Address, 0)
-  s.computeStackByteString(0)
+  s.computeStackByteString(1)
 }
 
 func (s *stack) SetCurrentTick(tick uint64) {
