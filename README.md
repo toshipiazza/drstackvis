@@ -10,15 +10,9 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 * [x] write esp AFTER write occurs, current esp values are WRONG
   * [x] pass into clean call?
   * [x] make it cross-architecture
-* [ ] output current output of running program (Base64 encoding, in place!)
-  * Read in stdout with mmap. Use read and write protections so we can just
-    base64 encode it in place.
+* [ ] wrap write syscall/function, and base64 encode the output to stdout/stderr
 * [ ] output instruction at which write occurs (see `type` in `memtrace_simple.c`)
 * [ ] determine whether a pointer is on the stack or heap and color accordingly
-
-> NOTE: to output current output, use dup2 to duplicate to
-> some other file descriptor, then use fdopen to read it in
-> incrementally, every time `memtrace` is called
 
 ## JSON Output (tentative)
 
@@ -28,9 +22,20 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
     { "addr": 0x08045890,
       "size": 8,
       "wmem": 0xDEADBEEF,
+      "type": "call",
       "sptr": 0xffffffff }, // this is ESP
       ...
   ],
+  "stdout": [
+    { "tick": 10000,
+      "output": "<base64 encoding>" },
+      ...
+  ],
+  "stderr": [
+    { "tick": 10000,
+      "output": "<base64 encoding>" },
+      ...
+  ]
   "stk_base": 0xffffffff
 }
 ```

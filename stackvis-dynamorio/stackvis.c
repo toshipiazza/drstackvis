@@ -39,6 +39,7 @@
 
 typedef struct _mem_ref_t {
     ushort size;
+    ushort type;
     app_pc addr;
 } mem_ref_t;
 
@@ -82,7 +83,7 @@ dereference_pointer(app_pc pc, ushort size)
 }
 
 static void
-memtrace(void *drcontext, app_pc stk_ptr)
+memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
 {
     per_thread_t *data;
     mem_ref_t *mem_ref, *buf_ptr;
@@ -101,27 +102,28 @@ memtrace(void *drcontext, app_pc stk_ptr)
         data->stk_base += sz;
     }
 
-    /* TODO: get stdout */
-#if 0
-    size_t sz = 100;
-    char *progout = dr_map_file(prog_stdout, &sz, 0, NULL,
-                            DR_MEMPROT_READ | DR_MEMPROT_WRITE,
-                            DR_MAP_PRIVATE | DR_MAP_CACHE_REACHABLE);
-    if (progout) {
-        dr_printf("HERE! %s", progout);
-    }
-    dr_unmap_file(progout, sz);
-#endif
-
     for (; mem_ref < buf_ptr; mem_ref++) {
+
+        app_pc wmem;
+        if (pre_call) {
+            /* we preinsert on calls, so we have to
+             * manually decrement the stack pointer
+             */
+            stk_ptr -= sizeof(app_pc);
+            wmem = pc;
+        } else {
+            wmem = (app_pc) dereference_pointer(mem_ref->addr, mem_ref->size);
+        }
+
         /* filter by whether write occurs on the stack or not */
         if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
             dr_fprintf(data->log, "   , { \"addr\":%u\n"
                                   "     , \"size\":%d\n"
                                   "     , \"sptr\":%u\n"
+                                  "     , \"type\":\"%s\"\n"
                                   "     , \"wmem\":%-10u }\n",
                         mem_ref->addr, mem_ref->size, stk_ptr,
-                        dereference_pointer(mem_ref->addr, mem_ref->size));
+                        decode_opcode_name(mem_ref->type), wmem);
         }
     }
     BUF_PTR(data->seg_base) = data->buf_base;
@@ -129,10 +131,17 @@ memtrace(void *drcontext, app_pc stk_ptr)
 
 /* clean_call dumps the memory reference info to the log file */
 static void
-clean_call(app_pc stk_ptr)
+post_mov(app_pc stk_ptr)
 {
     void *drcontext = dr_get_current_drcontext();
-    memtrace(drcontext, stk_ptr);
+    memtrace(drcontext, stk_ptr, 0, false);
+}
+
+static void
+pre_call(app_pc stk_ptr, app_pc pc)
+{
+    void *drcontext = dr_get_current_drcontext();
+    memtrace(drcontext, stk_ptr, pc, true);
 }
 
 static void
@@ -172,6 +181,22 @@ insert_save_size(void *drcontext, instrlist_t *ilist, instr_t *where,
 }
 
 static void
+insert_save_type(void *drcontext, instrlist_t *ilist, instr_t *where,
+                 reg_id_t base, reg_id_t scratch, ushort type)
+{
+    scratch = reg_resize_to_opsz(scratch, OPSZ_2);
+    MINSERT(ilist, where,
+            XINST_CREATE_load_int(drcontext,
+                                  opnd_create_reg(scratch),
+                                  OPND_CREATE_INT16(type)));
+    MINSERT(ilist, where,
+            XINST_CREATE_store_2bytes(drcontext,
+                                      OPND_CREATE_MEM16(base,
+                                                        offsetof(mem_ref_t, type)),
+                                      opnd_create_reg(scratch)));
+}
+
+static void
 insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                  opnd_t ref, reg_id_t reg_ptr, reg_id_t reg_addr)
 {
@@ -198,6 +223,7 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     ushort slot_ptr  = SPILL_SLOT_2;
     ushort slot_tmp  = SPILL_SLOT_3;
     ushort size;
+    ushort type;
 
     dr_save_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
     dr_save_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
@@ -205,6 +231,8 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     insert_save_addr(drcontext, ilist, where, ref, reg_ptr, reg_tmp);
     size = drutil_opnd_mem_size_in_bytes(ref, where);
     insert_save_size(drcontext, ilist, where, reg_ptr, reg_tmp, size);
+    type = instr_get_opcode(where);
+    insert_save_type(drcontext, ilist, where, reg_ptr, reg_tmp, type);
     insert_update_buf_ptr(drcontext, ilist, where, reg_ptr, sizeof(mem_ref_t));
 
     /* restore scratch registers */
@@ -243,9 +271,19 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
          * However, there is still a chance that the instrumentation code may clear the
          * exclusive monitor state.
          */
-        IF_ARM(&& !instr_is_exclusive_store(instr)))
-        dr_insert_clean_call(drcontext, bb, instr_get_next(instr), (void *) clean_call,
-                             false, 1, opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP)));
+        IF_ARM(&& !instr_is_exclusive_store(instr))) {
+        /* if the instruction isn't a call, then we can just operate after the instruction */
+        opnd_t sptr = opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP));
+        if (!instr_is_call(instr)) {
+            dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
+                                 (void *) post_mov, false, 1, sptr);
+        } else {
+            /* calls are very predictable in terms of the memory it writes */
+            opnd_t pc = OPND_CREATE_INTPTR(instr_get_app_pc(instr));
+            dr_insert_clean_call(drcontext, bb, instr,
+                                 (void *) pre_call, false, 2, sptr, pc);
+        }
+    }
 
     return DR_EMIT_DEFAULT;
 }
@@ -296,10 +334,10 @@ event_thread_init(void *drcontext)
     /* output json header and dummy write for ease of implementation */
     dr_fprintf(data->log, "{\n"
                           "  \"writes\": [\n"
-                          "     { \"addr\": 0\n"
-                          "     , \"size\": 0\n"
-                          "     , \"sptr\": 0\n"
-                          "     , \"wmem\": 0         }\n");
+                          "     { \"addr\":0\n"
+                          "     , \"size\":0\n"
+                          "     , \"sptr\":0\n"
+                          "     , \"wmem\":0         }\n");
 }
 
 static void
