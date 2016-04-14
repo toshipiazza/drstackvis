@@ -92,29 +92,24 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
     buf_ptr = BUF_PTR(data->seg_base);
     mem_ref = (mem_ref_t *) data->buf_base;
 
-    /* get the stack base */
+    /* get the stack base, or a good estimate */
     if (data->stk_base == 0) {
         /* stack starts at top of memory, but dr_query_memory
-         * gives us the bottom of it... */
+         * gives us the bottom of it...
+         */
         size_t sz;
         bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
         DR_ASSERT(ok);
         data->stk_base += sz;
     }
 
+    /* we preinsert on calls, so we have to
+     * manually decrement the stack pointer
+     */
+    if (pre_call) stk_ptr -= sizeof(app_pc);
     for (; mem_ref < buf_ptr; mem_ref++) {
-
-        app_pc wmem;
-        if (pre_call) {
-            /* we preinsert on calls, so we have to
-             * manually decrement the stack pointer
-             */
-            stk_ptr -= sizeof(app_pc);
-            wmem = pc;
-        } else {
-            wmem = (app_pc) dereference_pointer(mem_ref->addr, mem_ref->size);
-        }
-
+        app_pc wmem = pre_call ? pc
+            : (app_pc)dereference_pointer(mem_ref->addr, mem_ref->size);
         /* filter by whether write occurs on the stack or not */
         if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
             dr_fprintf(data->log, "   , { \"addr\":%u\n"
@@ -222,16 +217,14 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     reg_id_t reg_tmp = IF_X86_ELSE(DR_REG_XBX, DR_REG_R2);
     ushort slot_ptr  = SPILL_SLOT_2;
     ushort slot_tmp  = SPILL_SLOT_3;
-    ushort size;
-    ushort type;
+    ushort size = drutil_opnd_mem_size_in_bytes(ref, where);
+    ushort type = instr_get_opcode(where);
 
     dr_save_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
     dr_save_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
 
     insert_save_addr(drcontext, ilist, where, ref, reg_ptr, reg_tmp);
-    size = drutil_opnd_mem_size_in_bytes(ref, where);
     insert_save_size(drcontext, ilist, where, reg_ptr, reg_tmp, size);
-    type = instr_get_opcode(where);
     insert_save_type(drcontext, ilist, where, reg_ptr, reg_tmp, type);
     insert_update_buf_ptr(drcontext, ilist, where, reg_ptr, sizeof(mem_ref_t));
 
@@ -261,8 +254,8 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
             instrument_mem(drcontext, bb, instr, instr_get_dst(instr, i));
     }
 
-    /* insert code to call clean_call for processing the buffer, along with stack pointer */
-    if (/* XXX i#1702: it is ok to skip a few clean calls on predicated instructions,
+    bool should_insert_clean_call = 
+        /* XXX i#1702: it is ok to skip a few clean calls on predicated instructions,
          * since the buffer will be dumped later by other clean calls.
          */
         IF_X86_ELSE(true, !instr_is_predicated(instr))
@@ -271,14 +264,21 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
          * However, there is still a chance that the instrumentation code may clear the
          * exclusive monitor state.
          */
-        IF_ARM(&& !instr_is_exclusive_store(instr))) {
-        /* if the instruction isn't a call, then we can just operate after the instruction */
+        IF_ARM(&& !instr_is_exclusive_store(instr));
+
+    /* insert code to call clean_call for processing the buffer, along with stack pointer */
+    if (should_insert_clean_call) {
         opnd_t sptr = opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP));
         if (!instr_is_call(instr)) {
+            /* If the instruction isn't a call, then we should just operate after the instruction
+             * so we can get the memory written easily.
+             */
             dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
                                  (void *) post_mov, false, 1, sptr);
         } else {
-            /* calls are very predictable in terms of the memory it writes */
+            /* Calls are very predictable in terms of the memory they write,
+             * so we just preinsert the clean call this time.
+             */
             opnd_t pc = OPND_CREATE_INTPTR(instr_get_app_pc(instr));
             dr_insert_clean_call(drcontext, bb, instr,
                                  (void *) pre_call, false, 2, sptr, pc);
@@ -337,7 +337,7 @@ event_thread_init(void *drcontext)
                           "     { \"addr\":0\n"
                           "     , \"size\":0\n"
                           "     , \"sptr\":0\n"
-                          "     , \"wmem\":0         }\n");
+                          "     , \"wmem\":0          }\n");
 }
 
 static void
@@ -374,7 +374,7 @@ event_exit(void)
 DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
 {
-    dr_set_client_name("DynamoRIO Sample Client 'memtrace'",
+    dr_set_client_name("DynamoRIO Client 'drstackvis'",
                        "http://dynamorio.org/issues");
     if (!drmgr_init() || !drutil_init())
         DR_ASSERT(false);
