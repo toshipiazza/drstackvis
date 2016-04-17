@@ -30,8 +30,9 @@
  * DAMAGE.
  */
 
-#include <stddef.h>
-#include <stdint.h>
+#include <stddef.h>   // for offsetof
+#include <stdint.h>   // for uint*_t
+#include <inttypes.h> // for PRIuPTR
 #include "dr_api.h"
 #include "drmgr.h"
 #include "drutil.h"
@@ -112,11 +113,11 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
             : (app_pc)dereference_pointer(mem_ref->addr, mem_ref->size);
         /* filter by whether write occurs on the stack or not */
         if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
-            dr_fprintf(data->log, "   , { \"addr\":%u\n"
+            dr_fprintf(data->log, "   , { \"addr\":%"PRIuPTR"\n"
                                   "     , \"size\":%d\n"
-                                  "     , \"sptr\":%u\n"
+                                  "     , \"sptr\":%"PRIuPTR"\n"
                                   "     , \"type\":\"%s\"\n"
-                                  "     , \"wmem\":%-10u }\n",
+                                  "     , \"wmem\":%-20"PRIuPTR" }\n",
                         mem_ref->addr, mem_ref->size, stk_ptr,
                         decode_opcode_name(mem_ref->type), wmem);
         }
@@ -337,7 +338,7 @@ event_thread_init(void *drcontext)
                           "     { \"addr\":0\n"
                           "     , \"size\":0\n"
                           "     , \"sptr\":0\n"
-                          "     , \"wmem\":0          }\n");
+                          "     , \"wmem\":0                    }\n");
 }
 
 static void
