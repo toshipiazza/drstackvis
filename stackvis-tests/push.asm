@@ -8,7 +8,6 @@ _start:
   push rax
 
   ; should see cafebabe in json
-  mov rax, 0xdeadbeef
   mov rax, 0xcafebabe
   push rax
 
