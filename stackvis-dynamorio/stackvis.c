@@ -347,7 +347,7 @@ event_thread_exit(void *drcontext)
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
     dr_fprintf(data->log, "  ]\n"
-                          ", \"stk_base\":%u\n"
+                          ", \"stk_base\":%"PRIuPTR"\n"
                           "}\n", data->stk_base);
     log_file_close(data->log);
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
