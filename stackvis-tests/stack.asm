@@ -3,14 +3,25 @@ bits 64
 section .start
   global _start
 _start:
-  call func ; should see the address of `pop rax`
-            ; because call implicitly pushes the
-            ; address of pc onto the stack
+  call func1    ; should see the address of `pop rax`
+                ; because call implicitly pushes the
+                ; address of pc onto the stack
   ; exit
   mov rax, 60
   syscall
 
-func:
+
+func1:
+  push rbp      ; this should be 0 initially,
+  mov rbp, rsp  ; because there is no stack
+                ; frame yet
+  call func2
+
+  mov rsp, rbp
+  pop rbp
+  ret
+
+func2:
   push rbp
   mov rbp, rsp
 

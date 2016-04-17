@@ -101,6 +101,9 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
         size_t sz;
         bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
         DR_ASSERT(ok);
+
+        dr_fprintf(data->log, "stk_base:%"PRIuPTR" stk_ceil:%"PRIuPTR"\n",
+                data->stk_base + sz, data->stk_base);
         data->stk_base += sz;
     }
 
@@ -113,11 +116,11 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
             : (app_pc)dereference_pointer(mem_ref->addr, mem_ref->size);
         /* filter by whether write occurs on the stack or not */
         if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
-            dr_fprintf(data->log, "   , { \"addr\":%"PRIuPTR"\n"
-                                  "     , \"size\":%d\n"
-                                  "     , \"sptr\":%"PRIuPTR"\n"
-                                  "     , \"type\":\"%s\"\n"
-                                  "     , \"wmem\":%-20"PRIuPTR" }\n",
+            dr_fprintf(data->log, "addr:%"PRIuPTR
+                                  " size:%d"
+                                  " sptr:%"PRIuPTR
+                                  " type:\"%s\""
+                                  " wmem:%-20"PRIuPTR"\n",
                         mem_ref->addr, mem_ref->size, stk_ptr,
                         decode_opcode_name(mem_ref->type), wmem);
         }
@@ -332,13 +335,6 @@ event_thread_init(void *drcontext)
                               DR_FILE_CLOSE_ON_FORK |
 #endif
                               DR_FILE_ALLOW_LARGE);
-    /* output json header and dummy write for ease of implementation */
-    dr_fprintf(data->log, "{\n"
-                          "  \"writes\": [\n"
-                          "     { \"addr\":0\n"
-                          "     , \"size\":0\n"
-                          "     , \"sptr\":0\n"
-                          "     , \"wmem\":0                    }\n");
 }
 
 static void
@@ -346,9 +342,6 @@ event_thread_exit(void *drcontext)
 {
     per_thread_t *data;
     data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_fprintf(data->log, "  ]\n"
-                          ", \"stk_base\":%"PRIuPTR"\n"
-                          "}\n", data->stk_base);
     log_file_close(data->log);
     dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(per_thread_t));

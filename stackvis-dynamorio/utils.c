@@ -68,7 +68,7 @@ log_file_open(client_id_t id, void *drcontext,
     NULL_TERMINATE_BUFFER(log_dir);
     /* we do not need call drx_init before using drx_open_unique_appid_file */
     log = drx_open_unique_appid_file(log_dir, dr_get_process_id(),
-                                     name, "json", flags,
+                                     name, "log", flags,
                                      buf, BUFFER_SIZE_ELEMENTS(buf));
     if (log != INVALID_FILE) {
         char msg[MAXIMUM_PATH];
