@@ -1,0 +1,19 @@
+{
+  "writes": [
+     { "addr":0
+     , "size":0
+     , "sptr":0
+     , "wmem":0          }
+   , { "addr":465558456
+     , "size":8
+     , "sptr":465558456
+     , "type":"call"
+     , "wmem":4194424    }
+   , { "addr":465558456
+     , "size":8
+     , "sptr":465558456
+     , "type":"push"
+     , "wmem":4194429    }
+  ]
+, "stk_base":465567744
+}
