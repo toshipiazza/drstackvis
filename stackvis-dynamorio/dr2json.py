@@ -36,10 +36,16 @@ import re
 
 STK_BOUNDS = re.compile("stk_base:(\S+) stk_ceil:(\S+)")
 WRITE_OCCR = re.compile("addr:(\S+) size:(\S+) sptr:(\S+) type:(\S+) wmem:(\S+)")
+WRITE_SYSC = re.compile("fd:(\S+) output:(\S+)")
 
 if __name__ == '__main__':
+    tick = 0
+    # even though we *can* get other file descriptors,
+    # we don't particularly care about them for navigating
     data = {
-        "writes": [ ]
+        "writes": [ ],
+        "stderr": { },
+        "stdout": { }
             }
 
     for i in fileinput.input():
@@ -57,4 +63,15 @@ if __name__ == '__main__':
                     "type":res.group(4),
                     "wmem":int(res.group(5))
                         })
+                tick += 1 # "ticks" refer to writes
+            else:
+                res = WRITE_SYSC.match(i)
+                if res is not None:
+                    fd = int(res.group(1))
+                    out = res.group(2)
+
+                    if fd == 1:
+                        data["stdout"][tick] = out
+                    elif fd == 2:
+                        data["stderr"][tick] = out
     print(json.dumps(data, indent=4))

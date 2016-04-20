@@ -28,24 +28,26 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
       "sptr": 0xffffffff }, // this is ESP
       ...
   ],
-  // TODO
-  "stdout": [
-    { "tick": 10000,
-      "output": "<base64 encoding>" },
+  "stdout": {
+    "10000": "<base64 encoding>", // here, 10000 represents an index
+      ...                         // into the writes array above
+  },
+  "stderr": {
+    "12000": "<base64 encoding>" },
       ...
-  ],
-  // TODO
-  "stderr": [
-    { "tick": 10000,
-      "output": "<base64 encoding>" },
-      ...
-  ]
-  "stk_base": 0xffffffff
+  },
+  "stk_base": 0xffffffff,
+  "stk_ceil": 0xfffffff0
 }
 ```
 
 # Notice
 The plugin here was heavily modified from `utils.[ch]` and `memtrace_simple.c`,
 which are included in the sample files of a standard DynamoRIO distribution.
-These files are both distributed under the BSD 3 clause license. The code in
-`drstackvis.c` is distributed under the same license.
+Also used for syscall hooking was the `syscall.c` sample code, also distrbuted
+with DynamoRIO. These files are all distributed under the BSD 3 clause license.
+The code in `drstackvis.c` is distributed under the same license.
+
+Meanwhile, the files `base64.[ch]` are distributed under the apple public license,
+or the APL. The links to these files were found
+[here](http://opensource.apple.com//source/QuickTimeStreamingServer/QuickTimeStreamingServer-452/CommonUtilitiesLib/base64.c)
