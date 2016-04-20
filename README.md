@@ -12,7 +12,7 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
   * [x] make it cross-architecture
 * [x] output right bitwidths across architectures!!!!!
 * [ ] use only pre-insert clean calls, gleam written value from registers or other opnds
-* [ ] wrap write syscall/function, and base64 encode the output to stdout/stderr
+* [ ] pre-syscall, run base-64 encoding of stdout/stderr
 * [x] output instruction at which write occurs (see `type` in `memtrace_simple.c`)
 * [ ] determine whether a pointer is on the stack or heap and color accordingly
 

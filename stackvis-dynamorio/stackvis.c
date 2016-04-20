@@ -38,6 +38,14 @@
 #include "drutil.h"
 #include "utils.h"
 
+#ifdef UNIX
+# if defined(MACOS) || defined(ANDROID)
+#  include <sys/syscall.h>
+# else
+#  include <syscall.h>
+# endif
+#endif
+
 typedef struct _mem_ref_t {
     ushort size;
     ushort type;
@@ -66,7 +74,9 @@ enum {
 static reg_id_t tls_seg;
 static uint     tls_offs;
 static int      tls_idx;
-static file_t   prog_stdout;
+
+/* The system call number of SYS_write/NtWriteFile */
+static int      write_sysnum;
 #define TLS_SLOT(tls_base, enum_val) (void **)((byte *)(tls_base)+tls_offs+(enum_val))
 #define BUF_PTR(tls_base) *(mem_ref_t **)TLS_SLOT(tls_base, MEMTRACE_TLS_OFFS_BUF_PTR)
 
@@ -226,9 +236,11 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     ushort size = drutil_opnd_mem_size_in_bytes(ref, where);
     ushort type = instr_get_opcode(where);
 
+    /* we need two scratch registers */
     dr_save_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
     dr_save_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
 
+    /* save_addr should be called first as reg_ptr or reg_tmp maybe used in ref */
     insert_save_addr(drcontext, ilist, where, ref, reg_ptr, reg_tmp);
     insert_save_size(drcontext, ilist, where, reg_ptr, reg_tmp, size);
     insert_save_type(drcontext, ilist, where, reg_ptr, reg_tmp, type);
@@ -364,7 +376,52 @@ event_exit(void)
 
     drutil_exit();
     drmgr_exit();
-    dr_close_file(prog_stdout);
+}
+
+static int
+get_write_sysnum(void)
+{
+    /* XXX: we could use the "drsyscall" Extension from the Dr. Memory Framework
+     * (DRMF) to obtain the number of any system call from the name.
+     */
+#ifdef UNIX
+    return SYS_write;
+#else
+    byte *entry;
+    module_data_t *data = dr_lookup_module_by_name("ntdll.dll");
+    DR_ASSERT(data != NULL);
+    entry = (byte *) dr_get_proc_address(data->handle, "NtWriteFile");
+    DR_ASSERT(entry != NULL);
+    dr_free_module_data(data);
+    return drmgr_decode_sysnum_from_wrapper(entry);
+#endif
+}
+
+static bool
+event_filter_syscall(void *drcontext, int sysnum)
+{
+    return sysnum == write_sysnum;
+}
+
+static bool
+event_pre_syscall(void *drcontext, int sysnum)
+{
+    if (sysnum == write_sysnum) {
+        /* TODO: windows */
+        per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+
+        /* get info */
+        int fd = dr_syscall_get_param(drcontext, 0);
+        byte *out = (byte *) dr_syscall_get_param(drcontext, 1);
+        size_t size = dr_syscall_get_param(drcontext, 2);
+
+        /* base64 it */
+        byte *base64 = malloc(sizeof(byte) * (Base64encode_len(size) + 1));
+        Base64encode(base64, out, size);
+
+        dr_fprintf(data->log, "fd:%d output:%s\n", fd, base64);
+    }
+    return true;
 }
 
 DR_EXPORT void
@@ -374,6 +431,11 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
                        "http://dynamorio.org/issues");
     if (!drmgr_init() || !drutil_init())
         DR_ASSERT(false);
+
+    /* cache write syscall for performance in the filter */
+    write_sysnum = get_write_sysnum();
+    dr_register_filter_syscall_event(event_filter_syscall);
+    drmgr_register_pre_syscall_event(event_pre_syscall);
 
     /* register events */
     dr_register_exit_event(event_exit);
@@ -395,8 +457,5 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
      */
     if (!dr_raw_tls_calloc(&tls_seg, &tls_offs, MEMTRACE_TLS_COUNT, 0))
         DR_ASSERT(false);
-
-    /* duplicate stdout of running application */
-    prog_stdout = dr_dup_file_handle(STDOUT);
 }
 /* vim:set tabstop=4 shiftwidth=4: */
