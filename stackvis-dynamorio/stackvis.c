@@ -53,6 +53,7 @@ typedef struct {
     mem_ref_t *buf_base;
     file_t     log;
     app_pc     stk_base;
+    app_pc     stk_ceil;
 } per_thread_t;
 
 static client_id_t client_id;
@@ -101,6 +102,7 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
         size_t sz;
         bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
         DR_ASSERT(ok);
+        data->stk_ceil = data->stk_base;
 
         dr_fprintf(data->log, "stk_base:%"PRIuPTR" stk_ceil:%"PRIuPTR"\n",
                 data->stk_base + sz, data->stk_base);
@@ -115,11 +117,11 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
         app_pc wmem = pre_call ? pc
             : (app_pc)dereference_pointer(mem_ref->addr, mem_ref->size);
         /* filter by whether write occurs on the stack or not */
-        if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
+        if (mem_ref->addr <= data->stk_base && mem_ref->addr >= data->stk_ceil) {
             dr_fprintf(data->log, "addr:%"PRIuPTR
                                   " size:%d"
                                   " sptr:%"PRIuPTR
-                                  " type:\"%s\""
+                                  " type:%s"
                                   " wmem:%-20"PRIuPTR"\n",
                         mem_ref->addr, mem_ref->size, stk_ptr,
                         decode_opcode_name(mem_ref->type), wmem);
