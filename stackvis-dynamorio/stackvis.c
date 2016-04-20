@@ -415,8 +415,9 @@ event_pre_syscall(void *drcontext, int sysnum)
         byte *out = (byte *) dr_syscall_get_param(drcontext, 1);
         size_t size = dr_syscall_get_param(drcontext, 2);
 
-        /* base64 it */
-        byte *base64 = malloc(sizeof(byte) * (Base64encode_len(size) + 1));
+        /* base64 it; Base64encode provides null byte */
+        size_t base64_len = Base64encode_len(size);
+        byte *base64 = malloc(sizeof(byte) * base64_len);
         Base64encode(base64, out, size);
 
         dr_fprintf(data->log, "fd:%d output:%s\n", fd, base64);
