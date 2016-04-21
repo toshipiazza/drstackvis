@@ -272,7 +272,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
             instrument_mem(drcontext, bb, instr, instr_get_dst(instr, i));
     }
 
-    bool should_insert_clean_call = 
+    bool should_insert_clean_call =
         /* XXX i#1702: it is ok to skip a few clean calls on predicated instructions,
          * since the buffer will be dumped later by other clean calls.
          */
@@ -403,17 +403,28 @@ event_filter_syscall(void *drcontext, int sysnum)
     return sysnum == write_sysnum;
 }
 
+/* generally strive to make this very function thread-safe */
+/* TODO: use dr_safe_read to determine if the data is readable or not */
+#ifdef UNIX
+# define FD_ARG 0
+# define OUTPUT_ARG 1
+# define SIZE_ARG 2
+#else
+# define FD_ARG 0
+# define OUTPUT_ARG 5
+# define SIZE_ARG 6
+#endif
+
 static bool
 event_pre_syscall(void *drcontext, int sysnum)
 {
     if (sysnum == write_sysnum) {
-        /* TODO: windows */
         per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
 
         /* get info */
-        int fd = dr_syscall_get_param(drcontext, 0);
-        byte *out = (byte *) dr_syscall_get_param(drcontext, 1);
-        size_t size = dr_syscall_get_param(drcontext, 2);
+        int fd = dr_syscall_get_param(drcontext, FD_ARG);
+        byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
+        size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
 
         /* base64 it; Base64encode provides null byte */
         size_t base64_len = Base64encode_len(size);
