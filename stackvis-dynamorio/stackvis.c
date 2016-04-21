@@ -423,15 +423,18 @@ event_pre_syscall(void *drcontext, int sysnum)
 
         /* get info */
         int fd = dr_syscall_get_param(drcontext, FD_ARG);
-        byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
-        size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
+        if (fd == STDERR || fd == STDOUT) {
+            byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
+            size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
 
-        /* base64 it; Base64encode provides null byte */
-        size_t base64_len = Base64encode_len(size);
-        byte *base64 = malloc(sizeof(byte) * base64_len);
-        Base64encode(base64, out, size);
+            /* base64 it; Base64encode provides null byte */
+            size_t base64_len = Base64encode_len(size);
+            byte *base64 = malloc(sizeof(byte) * base64_len);
+            Base64encode(base64, out, size);
 
-        dr_fprintf(data->log, "fd:%d output:%s\n", fd, base64);
+            dr_fprintf(data->log, "%s:%s\n",
+                       fd == STDERR ? "stderr" : "stdout" , base64);
+        }
     }
     return true;
 }

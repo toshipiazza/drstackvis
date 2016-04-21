@@ -36,7 +36,8 @@ import re
 
 STK_BOUNDS = re.compile("stk_base:(\S+) stk_ceil:(\S+)")
 WRITE_OCCR = re.compile("addr:(\S+) size:(\S+) sptr:(\S+) type:(\S+) wmem:(\S+)")
-WRITE_SYSC = re.compile("fd:(\S+) output:(\S+)")
+STDERR_OUT = re.compile("stderr:(\S+)")
+STDOUT_OUT = re.compile("stdout:(\S+)")
 
 if __name__ == '__main__':
     tick = 0
@@ -65,13 +66,11 @@ if __name__ == '__main__':
                         })
                 tick += 1 # "ticks" refer to writes
             else:
-                res = WRITE_SYSC.match(i)
+                res = STDOUT_OUT.match(i)
                 if res is not None:
-                    fd = int(res.group(1))
-                    out = res.group(2)
-
-                    if fd == 1:
-                        data["stdout"][tick] = out
-                    elif fd == 2:
-                        data["stderr"][tick] = out
+                    data["stdout"][tick] = res.group(1)
+                else:
+                    res = STDERR_OUT.match(i)
+                    if res is not None:
+                        data["stderr"][tick] = res.group(1)
     print(json.dumps(data, indent=4))
