@@ -30,8 +30,11 @@
 # DAMAGE.
 
 
+from __future__ import print_function
+
 import fileinput
 import json
+import sys
 import re
 
 STK_BOUNDS = re.compile("stk_base:(\S+) stk_ceil:(\S+)")
@@ -73,4 +76,6 @@ if __name__ == '__main__':
                     res = STDERR_OUT.match(i)
                     if res is not None:
                         data["stderr"][tick] = res.group(1)
+                    else:
+                        print("Error: Could not understand line {}".format(i), file=sys.stderr)
     print(json.dumps(data, indent=4))
