@@ -37,6 +37,7 @@
 #include "drmgr.h"
 #include "drutil.h"
 #include "utils.h"
+#include "base64.h"
 
 #ifdef UNIX
 # if defined(MACOS) || defined(ANDROID)
@@ -295,7 +296,9 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
                                  (void *) post_mov, false, 1, sptr);
         } else {
             /* Calls are very predictable in terms of the memory they write,
-             * so we just preinsert the clean call this time.
+             * so we just preinsert the clean call this time. This is also because
+             * we don't want to print the call instruction *after* the function has
+             * ended...
              */
             opnd_t pc = OPND_CREATE_INTPTR(instr_get_app_pc(instr));
             dr_insert_clean_call(drcontext, bb, instr,
@@ -400,11 +403,10 @@ get_write_sysnum(void)
 static bool
 event_filter_syscall(void *drcontext, int sysnum)
 {
+    /* TODO: this doesn't work? */
     return sysnum == write_sysnum;
 }
 
-/* generally strive to make this very function thread-safe */
-/* TODO: use dr_safe_read to determine if the data is readable or not */
 #ifdef UNIX
 # define FD_ARG 0
 # define OUTPUT_ARG 1
@@ -415,6 +417,7 @@ event_filter_syscall(void *drcontext, int sysnum)
 # define SIZE_ARG 6
 #endif
 
+/* generally strive to make this function very thread-safe */
 static bool
 event_pre_syscall(void *drcontext, int sysnum)
 {
@@ -429,6 +432,14 @@ event_pre_syscall(void *drcontext, int sysnum)
 
             /* base64 it; Base64encode provides null byte */
             size_t base64_len = Base64encode_len(size);
+
+#if 0
+            /* TODO: use dr_raw_mem_alloc? */
+            byte *base64 = dr_raw_mem_alloc(sizeof(byte) * base64_len,
+                                            DR_MEMPROT_READ | DR_MEMPROT_WRITE,
+                                            NULL);
+#endif
+
             byte *base64 = malloc(sizeof(byte) * base64_len);
             Base64encode(base64, out, size);
 
