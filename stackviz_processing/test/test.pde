@@ -41,7 +41,7 @@ void setup(){
   int returnVal = chooser.showOpenDialog(null);
   if (returnVal == JFileChooser.APPROVE_OPTION) {
     //read in the json
-    JSONObject j = loadJSONObject(chooser.getSelectedFile().getName());
+    JSONObject j = loadJSONObject(chooser.getSelectedFile().getAbsoluteFile());
     parseJSON(j);
     println("json file has been read"); //confirm end of readjson
   } else {

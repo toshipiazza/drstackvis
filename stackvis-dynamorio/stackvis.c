@@ -125,10 +125,11 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
      */
     if (pre_call) stk_ptr -= sizeof(app_pc);
     for (; mem_ref < buf_ptr; mem_ref++) {
-        app_pc wmem = pre_call ? pc
-            : (app_pc)dereference_pointer(mem_ref->addr, mem_ref->size);
         /* filter by whether write occurs on the stack or not */
         if (mem_ref->addr <= data->stk_base && mem_ref->addr >= data->stk_ceil) {
+            /* on a call instruction, the written memory is just pc */
+            app_pc wmem = pre_call ? pc
+                : (app_pc) dereference_pointer(mem_ref->addr, mem_ref->size);
             dr_fprintf(data->log, "addr:%"PRIuPTR
                                   " size:%d"
                                   " sptr:%"PRIuPTR
