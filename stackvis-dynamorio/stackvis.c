@@ -403,7 +403,6 @@ get_write_sysnum(void)
 static bool
 event_filter_syscall(void *drcontext, int sysnum)
 {
-    /* TODO: this doesn't work? */
     return sysnum == write_sysnum;
 }
 
@@ -433,18 +432,14 @@ event_pre_syscall(void *drcontext, int sysnum)
             /* base64 it; Base64encode provides null byte */
             size_t base64_len = Base64encode_len(size);
 
-#if 0
-            /* TODO: use dr_raw_mem_alloc? */
             byte *base64 = dr_raw_mem_alloc(sizeof(byte) * base64_len,
                                             DR_MEMPROT_READ | DR_MEMPROT_WRITE,
                                             NULL);
-#endif
-
-            byte *base64 = malloc(sizeof(byte) * base64_len);
             Base64encode(base64, out, size);
 
             dr_fprintf(data->log, "%s:%s\n",
                        fd == STDERR ? "stderr" : "stdout" , base64);
+            dr_raw_mem_free(base64, sizeof(byte) * base64_len);
         }
     }
     return true;
