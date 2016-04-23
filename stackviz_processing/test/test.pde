@@ -1,8 +1,8 @@
-//import controlP5.*; //library used for UI/string input
+import controlP5.*; //library used for UI/string input
 import javax.xml.bind.DatatypeConverter; //b64
 import javax.swing.JFileChooser;
 
-// ControlP5 cp5;
+ControlP5 cp5;
 
 //start helper functions here
 void parseJSON(JSONObject j){
@@ -21,7 +21,10 @@ void parseJSON(JSONObject j){
     double wmem = block.getDouble("wmem");
     int size = block.getInt("size");
     
-    println("sptr: " + sptr + "\taddr: " + addr + "\twmem: " + wmem + "\tsize: " + size + "\n");
+    println("sptr: " + sptr +
+            "\taddr: " + addr +
+            "\twmem: " + wmem +
+            "\tsize: " + size + "\n");
 
     //create a class object Mem with these items
     //also need to convert double to hex
