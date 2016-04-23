@@ -7,8 +7,8 @@ ControlP5 cp5;
 //start helper functions here
 void parseJSON(JSONObject j){
   //TODO: read in stdout, stderr
-  double stk_ceil = j.getDouble("stk_ceil");
-  double stk_base = j.getDouble("stk_base");
+  long stk_ceil = (long) j.getDouble("stk_ceil");
+  long stk_base = (long) j.getDouble("stk_base");
   
   JSONArray writes = j.getJSONArray("writes");
   
@@ -16,9 +16,9 @@ void parseJSON(JSONObject j){
   println("stk_base: " + stk_base);
   for (int i=0; i<writes.size(); i++){ //go through writes
     JSONObject block = writes.getJSONObject(i);
-    double sptr = block.getDouble("sptr");
-    double addr = block.getDouble("addr");
-    double wmem = block.getDouble("wmem");
+    long sptr = (long) block.getDouble("sptr");
+    long addr = (long) block.getDouble("addr");
+    long wmem = (long) block.getDouble("wmem");
     int size = block.getInt("size");
     
     println("sptr: " + sptr +
