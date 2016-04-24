@@ -291,7 +291,8 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
         opnd_t sptr = opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP));
         if (!instr_is_call(instr)) {
             /* If the instruction isn't a call, then we should just operate after the instruction
-             * so we can get the memory written easily.
+             * so we can get the memory written easily. TODO: we should make this cleaner
+             * by just reading the source operands instead of postinserting.
              */
             dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
                                  (void *) post_mov, false, 1, sptr);
