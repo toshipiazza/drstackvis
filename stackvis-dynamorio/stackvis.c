@@ -296,12 +296,11 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
             dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
                                  (void *) post_mov, false, 1, sptr);
         } else {
-            /* Calls are very predictable in terms of the memory they write,
-             * so we just preinsert the clean call this time. This is also because
-             * we don't want to print the call instruction *after* the function has
-             * ended...
+            /* We don't want to postinsert calls because then writes are perceived to
+             * be out of order. Also, calls are a special case; we can get the value
+             * pushed onto the stack from the first source operand.
              */
-            opnd_t pc = OPND_CREATE_INTPTR(instr_get_app_pc(instr));
+            opnd_t pc = OPND_CREATE_INTPTR(opnd_get_pc(instr_get_src(instr, 0)));
             dr_insert_clean_call(drcontext, bb, instr,
                                  (void *) pre_call, false, 2, sptr, pc);
         }
@@ -430,9 +429,8 @@ event_pre_syscall(void *drcontext, int sysnum)
             byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
             size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
 
-            /* base64 it; Base64encode provides null byte */
+            /* Base64encode_len provides null byte so no size+1 */
             size_t base64_len = Base64encode_len(size);
-
             byte *base64 = dr_raw_mem_alloc(sizeof(byte) * base64_len,
                                             DR_MEMPROT_READ | DR_MEMPROT_WRITE,
                                             NULL);
