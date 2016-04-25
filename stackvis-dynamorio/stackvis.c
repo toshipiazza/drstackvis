@@ -291,8 +291,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
         opnd_t sptr = opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP));
         if (!instr_is_call(instr)) {
             /* If the instruction isn't a call, then we should just operate after the instruction
-             * so we can get the memory written easily. TODO: we should make this cleaner
-             * by just reading the source operands instead of postinserting.
+             * so we can get the memory written easily.
              */
             dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
                                  (void *) post_mov, false, 1, sptr);
@@ -301,7 +300,14 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
              * be out of order. Also, calls are a special case; we can get the value
              * pushed onto the stack from the first source operand.
              */
-            opnd_t pc = OPND_CREATE_INTPTR(opnd_get_pc(instr_get_src(instr, 0)));
+            opnd_t pc = instr_get_src(instr, 0);
+            if (opnd_is_pc(pc)) {
+                /* If it's not a reg, it's an absolute value. We pass it in
+                 * as an INTPTR (arm = INT)
+                 */
+                app_pc pc_val = opnd_get_pc(pc);
+                pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(pc_val);
+            }
             dr_insert_clean_call(drcontext, bb, instr,
                                  (void *) pre_call, false, 2, sptr, pc);
         }
@@ -417,6 +423,9 @@ event_filter_syscall(void *drcontext, int sysnum)
 # define SIZE_ARG 6
 #endif
 
+#define PAGESIZE 0x1000
+#define ROUNDUP(x) ((x + (PAGESIZE)-1) & ~((PAGESIZE)-1))
+
 /* generally strive to make this function very thread-safe */
 static bool
 event_pre_syscall(void *drcontext, int sysnum)
@@ -430,16 +439,19 @@ event_pre_syscall(void *drcontext, int sysnum)
             byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
             size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
 
-            /* Base64encode_len provides null byte so no size+1 */
+            /* Base64encode_len provides null byte so no size+1.
+             * Also, dr_raw_mem_alloc requires that allocated
+             * memory is rounded up to nearest page boundary.
+             */
             size_t base64_len = Base64encode_len(size);
-            byte *base64 = dr_raw_mem_alloc(sizeof(byte) * base64_len,
+            byte *base64 = dr_raw_mem_alloc(ROUNDUP(base64_len),
                                             DR_MEMPROT_READ | DR_MEMPROT_WRITE,
                                             NULL);
             Base64encode(base64, out, size);
 
             dr_fprintf(data->log, "%s:%s\n",
                        fd == STDERR ? "stderr" : "stdout" , base64);
-            dr_raw_mem_free(base64, sizeof(byte) * base64_len);
+            dr_raw_mem_free(base64, ROUNDUP(base64_len));
         }
     }
     return true;
