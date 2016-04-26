@@ -107,6 +107,9 @@ memtrace(app_pc pc, bool pre_call)
     dr_get_mcontext(drcontext, &mcontext);
     app_pc stk_ptr = (app_pc) mcontext.xsp;
 
+    /* We preinsert on calls, so we have to manually decrement stk_ptr. */
+    if (pre_call) stk_ptr -= sizeof(app_pc);
+
     data    = drmgr_get_tls_field(drcontext, tls_idx);
     buf_ptr = BUF_PTR(data->seg_base);
     mem_ref = (mem_ref_t *) data->buf_base;
@@ -124,8 +127,6 @@ memtrace(app_pc pc, bool pre_call)
         data->stk_base += sz;
     }
 
-    /* We preinsert on calls, so we have to manually decrement stk_ptr. */
-    if (pre_call) stk_ptr -= sizeof(app_pc);
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
         if (mem_ref->addr <= data->stk_base && mem_ref->addr >= data->stk_ceil) {
@@ -136,7 +137,7 @@ memtrace(app_pc pc, bool pre_call)
                                   " size:%d"
                                   " sptr:%"PRIuPTR
                                   " type:%s"
-                                  " wmem:%-20"PRIuPTR"\n",
+                                  " wmem:%"PRIuPTR"\n",
                         mem_ref->addr, mem_ref->size, stk_ptr,
                         decode_opcode_name(mem_ref->type), wmem);
         }
@@ -254,6 +255,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
 {
     int i;
 
+    /* TODO: idea! change all call's to push then jmp */
     if (!instr_is_app(instr))
         return DR_EMIT_DEFAULT;
     if (!instr_writes_memory(instr))
@@ -276,21 +278,21 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
          * exclusive monitor state.
          */
         IF_ARM(&& !instr_is_exclusive_store(instr));
+    if (!should_insert_clean_call)
+        return DR_EMIT_DEFAULT;
 
     /* We dump the writes to stdout. In the case of a call instruction, we pre-insert
      * instrumentation so writes appear in order. Otherwise, we post-insert for ease
      * of getting the written value.
      */
-    if (should_insert_clean_call) {
-        if (!instr_is_call(instr)) {
-            dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
-                                 (void *) post_mov, false, 0);
-        } else {
-            /* for call instruction, this is xip to be pushed onto the stack */
-            opnd_t pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(
-                    (app_pc) decode_next_pc(drcontext, (byte *) instr_get_app_pc(instr)));
-            dr_insert_clean_call(drcontext, bb, instr, (void *) pre_call, false, 1, pc);
-        }
+    if (!instr_is_call(instr)) {
+        dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
+                             (void *) post_mov, false, 0);
+    } else {
+        /* for call instruction, this is xip to be pushed onto the stack */
+        opnd_t pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(
+                (app_pc) decode_next_pc(drcontext, (byte *) instr_get_app_pc(instr)));
+        dr_insert_clean_call(drcontext, bb, instr, (void *) pre_call, false, 1, pc);
     }
 
     return DR_EMIT_DEFAULT;
