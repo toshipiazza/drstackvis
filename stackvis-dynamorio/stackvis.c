@@ -105,7 +105,6 @@ memtrace(app_pc pc, bool pre_call)
     void *drcontext = dr_get_current_drcontext();
     dr_mcontext_t mcontext = {sizeof(mcontext), DR_MC_CONTROL/*only xsp*/,};
     dr_get_mcontext(drcontext, &mcontext);
-    /* TODO: xip? */
     app_pc stk_ptr = (app_pc) mcontext.xsp;
 
     data    = drmgr_get_tls_field(drcontext, tls_idx);
@@ -145,17 +144,9 @@ memtrace(app_pc pc, bool pre_call)
     BUF_PTR(data->seg_base) = data->buf_base;
 }
 
-static void
-post_mov(void)
-{
-    memtrace(0, false);
-}
-
-static void
-pre_call(app_pc pc)
-{
-    memtrace(pc, true);
-}
+/* clean call to flush the buffer */
+static void post_mov(void)      { memtrace(0, false); }
+static void pre_call(app_pc pc) { memtrace(pc, true); }
 
 static void
 insert_load_buf_ptr(void *drcontext, instrlist_t *ilist, instr_t *where,
@@ -298,8 +289,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
             /* for call instruction, this is xip to be pushed onto the stack */
             opnd_t pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(
                     (app_pc) decode_next_pc(drcontext, (byte *) instr_get_app_pc(instr)));
-            dr_insert_clean_call(drcontext, bb, instr,
-                                 (void *) pre_call, false, 1, pc);
+            dr_insert_clean_call(drcontext, bb, instr, (void *) pre_call, false, 1, pc);
         }
     }
 
