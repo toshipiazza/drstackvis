@@ -101,11 +101,11 @@ memtrace(app_pc pc, bool pre_call)
     per_thread_t *data;
     mem_ref_t *mem_ref, *buf_ptr;
 
-    /* get stack pointer
-     * TODO: xip? Why is xip zero? */
+    /* get stack pointer */
     void *drcontext = dr_get_current_drcontext();
     dr_mcontext_t mcontext = {sizeof(mcontext), DR_MC_CONTROL/*only xsp*/,};
     dr_get_mcontext(drcontext, &mcontext);
+    /* TODO: xip? */
     app_pc stk_ptr = (app_pc) mcontext.xsp;
 
     data    = drmgr_get_tls_field(drcontext, tls_idx);
@@ -114,14 +114,14 @@ memtrace(app_pc pc, bool pre_call)
 
     /* get the stack base, or a good estimate */
     if (data->stk_base == 0) {
-        /* stack starts at top of memory */
         size_t sz;
         bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
         DR_ASSERT(ok);
-        data->stk_ceil = data->stk_base;
 
+        /* stack starts at top of memory */
         dr_fprintf(data->log, "stk_base:%"PRIuPTR" stk_ceil:%"PRIuPTR"\n",
                 data->stk_base + sz, data->stk_base);
+        data->stk_ceil = data->stk_base;
         data->stk_base += sz;
     }
 
@@ -295,10 +295,9 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
             dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
                                  (void *) post_mov, false, 0);
         } else {
-            opnd_t pc = instr_get_src(instr, 0);
-            /* TODO: why do we have to do this? */
-            pc = !opnd_is_pc(pc) ? pc
-                    : IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(opnd_get_pc(pc));
+            /* for call instruction, this is xip to be pushed onto the stack */
+            opnd_t pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(
+                    (app_pc) decode_next_pc(drcontext, (byte *) instr_get_app_pc(instr)));
             dr_insert_clean_call(drcontext, bb, instr,
                                  (void *) pre_call, false, 1, pc);
         }
