@@ -7,7 +7,6 @@ Stack Visualizer written using DynamoRIO. Frontend is in Processing (coming soon
 The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 
 ## TODO DynamoRIO Plugin
-* [ ] use only pre-insert clean calls, gleam written value from registers or other opnds
 * [x] pre-syscall, run base-64 encoding of stdout/stderr
   * [x] weird value for windows fd (=32), should we just output stderr vs stdout in log file?
 * [x] output instruction at which write occurs (see `type` in `memtrace_simple.c`)
