@@ -96,10 +96,17 @@ dereference_pointer(app_pc pc, ushort size)
 }
 
 static void
-memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
+memtrace(app_pc pc, bool pre_call)
 {
     per_thread_t *data;
     mem_ref_t *mem_ref, *buf_ptr;
+
+    /* get stack pointer
+     * TODO: xip? Why is xip zero? */
+    void *drcontext = dr_get_current_drcontext();
+    dr_mcontext_t mcontext = {sizeof(mcontext), DR_MC_CONTROL/*only xsp*/,};
+    dr_get_mcontext(drcontext, &mcontext);
+    app_pc stk_ptr = (app_pc) mcontext.xsp;
 
     data    = drmgr_get_tls_field(drcontext, tls_idx);
     buf_ptr = BUF_PTR(data->seg_base);
@@ -107,9 +114,7 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
 
     /* get the stack base, or a good estimate */
     if (data->stk_base == 0) {
-        /* stack starts at top of memory, but dr_query_memory
-         * gives us the bottom of it...
-         */
+        /* stack starts at top of memory */
         size_t sz;
         bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
         DR_ASSERT(ok);
@@ -120,9 +125,7 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
         data->stk_base += sz;
     }
 
-    /* we preinsert on calls, so we have to
-     * manually decrement the stack pointer
-     */
+    /* We preinsert on calls, so we have to manually decrement stk_ptr. */
     if (pre_call) stk_ptr -= sizeof(app_pc);
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
@@ -142,19 +145,16 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
     BUF_PTR(data->seg_base) = data->buf_base;
 }
 
-/* clean_call dumps the memory reference info to the log file */
 static void
-post_mov(app_pc stk_ptr)
+post_mov(void)
 {
-    void *drcontext = dr_get_current_drcontext();
-    memtrace(drcontext, stk_ptr, 0, false);
+    memtrace(0, false);
 }
 
 static void
-pre_call(app_pc stk_ptr, app_pc pc)
+pre_call(app_pc pc)
 {
-    void *drcontext = dr_get_current_drcontext();
-    memtrace(drcontext, stk_ptr, pc, true);
+    memtrace(pc, true);
 }
 
 static void
@@ -286,30 +286,21 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
          */
         IF_ARM(&& !instr_is_exclusive_store(instr));
 
-    /* insert code to call clean_call for processing the buffer, along with stack pointer */
+    /* We dump the writes to stdout. In the case of a call instruction, we pre-insert
+     * instrumentation so writes appear in order. Otherwise, we post-insert for ease
+     * of getting the written value.
+     */
     if (should_insert_clean_call) {
-        opnd_t sptr = opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP));
         if (!instr_is_call(instr)) {
-            /* If the instruction isn't a call, then we should just operate after the instruction
-             * so we can get the memory written easily.
-             */
             dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
-                                 (void *) post_mov, false, 1, sptr);
+                                 (void *) post_mov, false, 0);
         } else {
-            /* We don't want to postinsert calls because then writes are perceived to
-             * be out of order. Also, calls are a special case; we can get the value
-             * pushed onto the stack from the first source operand.
-             */
             opnd_t pc = instr_get_src(instr, 0);
-            if (opnd_is_pc(pc)) {
-                /* If it's not a reg, it's an absolute value. We pass it in
-                 * as an INTPTR (arm = INT)
-                 */
-                app_pc pc_val = opnd_get_pc(pc);
-                pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(pc_val);
-            }
+            /* TODO: why do we have to do this? */
+            pc = !opnd_is_pc(pc) ? pc
+                    : IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(opnd_get_pc(pc));
             dr_insert_clean_call(drcontext, bb, instr,
-                                 (void *) pre_call, false, 2, sptr, pc);
+                                 (void *) pre_call, false, 1, pc);
         }
     }
 
@@ -391,9 +382,6 @@ event_exit(void)
 static int
 get_write_sysnum(void)
 {
-    /* XXX: we could use the "drsyscall" Extension from the Dr. Memory Framework
-     * (DRMF) to obtain the number of any system call from the name.
-     */
 #ifdef UNIX
     return SYS_write;
 #else
@@ -423,9 +411,6 @@ event_filter_syscall(void *drcontext, int sysnum)
 # define SIZE_ARG 6
 #endif
 
-#define PAGESIZE 0x1000
-#define ROUNDUP(x) ((x + (PAGESIZE)-1) & ~((PAGESIZE)-1))
-
 /* generally strive to make this function very thread-safe */
 static bool
 event_pre_syscall(void *drcontext, int sysnum)
@@ -439,19 +424,14 @@ event_pre_syscall(void *drcontext, int sysnum)
             byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
             size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
 
-            /* Base64encode_len provides null byte so no size+1.
-             * Also, dr_raw_mem_alloc requires that allocated
-             * memory is rounded up to nearest page boundary.
-             */
+            /* Base64encode_len provides null byte so no size+1 */
             size_t base64_len = Base64encode_len(size);
-            byte *base64 = dr_raw_mem_alloc(ROUNDUP(base64_len),
-                                            DR_MEMPROT_READ | DR_MEMPROT_WRITE,
-                                            NULL);
+            byte *base64 = malloc(base64_len);
             Base64encode(base64, out, size);
 
             dr_fprintf(data->log, "%s:%s\n",
                        fd == STDERR ? "stderr" : "stdout" , base64);
-            dr_raw_mem_free(base64, ROUNDUP(base64_len));
+            free(base64);
         }
     }
     return true;
