@@ -96,11 +96,18 @@ dereference_pointer(app_pc pc, ushort size)
 }
 
 static void
+get_stack_bounds(app_pc *base, app_pc *ceil, app_pc sptr)
+{
+    size_t sz;
+    bool ok = dr_query_memory(sptr, ceil, &sz, NULL);
+    DR_ASSERT(ok);
+    /* stack starts at top of memory */
+    *base -= sz;
+}
+
+static void
 memtrace(app_pc pc, bool pre_call)
 {
-    per_thread_t *data;
-    mem_ref_t *mem_ref, *buf_ptr;
-
     /* get stack pointer */
     void *drcontext = dr_get_current_drcontext();
     dr_mcontext_t mcontext = {sizeof(mcontext), DR_MC_CONTROL/*only xsp*/,};
@@ -110,21 +117,15 @@ memtrace(app_pc pc, bool pre_call)
     /* We preinsert on calls, so we have to manually decrement stk_ptr. */
     if (pre_call) stk_ptr -= sizeof(app_pc);
 
-    data    = drmgr_get_tls_field(drcontext, tls_idx);
-    buf_ptr = BUF_PTR(data->seg_base);
-    mem_ref = (mem_ref_t *) data->buf_base;
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    mem_ref_t *buf_ptr = BUF_PTR(data->seg_base),
+              *mem_ref = (mem_ref_t *) data->buf_base;
 
     /* get the stack base, or a good estimate */
     if (data->stk_base == 0) {
-        size_t sz;
-        bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
-        DR_ASSERT(ok);
-
-        /* stack starts at top of memory */
+        get_stack_bounds(&data->stk_base, &data->stk_ceil, stk_ptr);
         dr_fprintf(data->log, "stk_base:%"PRIuPTR" stk_ceil:%"PRIuPTR"\n",
-                data->stk_base + sz, data->stk_base);
-        data->stk_ceil = data->stk_base;
-        data->stk_base += sz;
+                data->stk_base, data->stk_ceil);
     }
 
     for (; mem_ref < buf_ptr; mem_ref++) {
@@ -286,12 +287,13 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
      * of getting the written value.
      */
     if (!instr_is_call(instr)) {
-        dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
-                             (void *) post_mov, false, 0);
+        instr_t *next = instr_get_next(instr);
+        dr_insert_clean_call(drcontext, bb, next, (void *) post_mov, false, 0);
     } else {
         /* for call instruction, this is xip to be pushed onto the stack */
-        opnd_t pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(
-                (app_pc) decode_next_pc(drcontext, (byte *) instr_get_app_pc(instr)));
+        byte * curr_pc = instr_get_app_pc(instr);
+        app_pc next_pc = decode_next_pc(drcontext, curr_pc);
+        opnd_t pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(next_pc);
         dr_insert_clean_call(drcontext, bb, instr, (void *) pre_call, false, 1, pc);
     }
 
