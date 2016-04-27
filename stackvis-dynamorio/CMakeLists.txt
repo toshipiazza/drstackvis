@@ -28,7 +28,12 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 # DAMAGE.
 
-add_library(stackvis SHARED stackvis.c utils.c base64.c)
+add_library(stackvis SHARED
+  stackvis.c
+  utils.c
+  utils.h
+  base64.c
+  base64.h)
 find_package(DynamoRIO)
 if (NOT DynamoRIO_FOUND)
   message(FATAL_ERROR "DynamoRIO package required to build")

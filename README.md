@@ -32,12 +32,6 @@ The DynamoRIO Plugin can be built using `cmake -DDynamoRIO_DIR=... && make`.
 ```
 
 # Notice
-The plugin here was heavily modified from `utils.[ch]` and `memtrace_simple.c`,
-which are included in the sample files of a standard DynamoRIO distribution.
-Also used for syscall hooking was the `syscall.c` sample code, also distrbuted
-with DynamoRIO. These files are all distributed under the BSD 3 clause license.
-The code in `drstackvis.c` is distributed under the same license.
+The plugin here was heavily modified from `utils.[ch]` and `memtrace_simple.c`, which are included in the sample files of a standard DynamoRIO distribution.  Also used for syscall hooking was the `syscall.c` sample code, also distrbuted with DynamoRIO. These files are all distributed under the BSD 3 clause license. The code in `drstackvis.c` is distributed under the same license.
 
-Meanwhile, the files `base64.[ch]` are distributed under the apple public license,
-or the APL. The links to these files were found
-[here](http://opensource.apple.com//source/QuickTimeStreamingServer/QuickTimeStreamingServer-452/CommonUtilitiesLib/base64.c)
+The files `base64.[ch]` are distributed under the apple public license, as well as under the Apache License. The links to these files were found [here](http://opensource.apple.com//source/QuickTimeStreamingServer/QuickTimeStreamingServer-452/CommonUtilitiesLib/base64.c).

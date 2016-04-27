@@ -256,7 +256,12 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
 {
     int i;
 
-    /* TODO: idea! change all call's to push then jmp */
+    /* TODO: If we can statically determine that the operand will never
+     * write to stack memory (operand is an absolute memory reference
+     * not within stack bounds), we should fail early.
+     * TODO: drutil_expand_call convenience function?
+     */
+
     if (!instr_is_app(instr))
         return DR_EMIT_DEFAULT;
     if (!instr_writes_memory(instr))
@@ -430,6 +435,19 @@ event_pre_syscall(void *drcontext, int sysnum)
     return true;
 }
 
+/* define annotation handlers */
+void
+handle_stackvis_impromptu_breakpoint(void)
+{
+    dr_printf("breakpoint reached\n");
+}
+
+void
+handle_stackvis_stack_annotation(byte *pc, char *label)
+{
+    dr_printf("stack annotation <%"PRIuPTR">(%s)\n", (app_pc) pc, label);
+}
+
 DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
 {
@@ -452,6 +470,14 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
                                                  event_app_instruction,
                                                  NULL))
         DR_ASSERT(false);
+
+    /* register annotations */
+    dr_annotation_register_call("stackvis_impromptu_breakpoint",
+                                handle_stackvis_impromptu_breakpoint, false, 0,
+                                DR_ANNOTATION_CALL_TYPE_FASTCALL);
+    dr_annotation_register_call("stackvis_stack_annotation",
+                                handle_stackvis_stack_annotation, false, 2,
+                                DR_ANNOTATION_CALL_TYPE_FASTCALL);
 
     client_id = id;
 
