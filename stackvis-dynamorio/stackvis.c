@@ -134,7 +134,7 @@ memtrace(app_pc pc, bool pre_call)
 
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
-        if (mem_ref->addr <= data->stk_base && mem_ref->addr >= data->stk_ceil) {
+        if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
             /* on a call instruction, the written memory is just pc */
             app_pc wmem = pre_call ? pc
                 : (app_pc) dereference_pointer(mem_ref->addr, mem_ref->size);
@@ -227,7 +227,9 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
 static bool
 filter_abs_writes(opnd_t ref)
 {
-    /* We can really only filter absolute addresses. */
+    /* On windows, SS and DS refer to the same location.
+     * This check might not work on Windows. */
+#ifndef WINDOWS
     if (opnd_is_abs_addr(ref)) {
         /* check the selector */
         reg_t seg = opnd_get_segment(ref);
@@ -237,6 +239,16 @@ filter_abs_writes(opnd_t ref)
             return true;
         return false;
     }
+#if 0
+    /* TODO: does this work? */
+    else if (opnd_is_base_disp(ref)) {
+        reg_id_t base = opnd_get_base(ref);
+        if (base == DR_REG_XSP || base == DR_REG_XBP)
+            return true;
+        return false;
+    }
+#endif
+#endif
     return true;
 }
 
