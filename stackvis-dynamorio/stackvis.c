@@ -225,7 +225,7 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
 }
 
 static bool
-filter_data_writes(void *drcontext, opnd_t ref)
+filter_abs_writes(opnd_t ref)
 {
     /* We can really only filter absolute addresses. */
     /* TODO: check this logic! */
@@ -234,17 +234,10 @@ filter_data_writes(void *drcontext, opnd_t ref)
             /* check the selector */
             if (opnd_get_segment(ref) == DR_SEG_SS)
                 return true;
-            else {
-                dr_printf("WARNING: filtering on operand of (far abs addr) ");
-                opnd_disassemble(drcontext, ref, STDOUT);
-                dr_printf("\n");
+            else
                 return false;
-            }
         } else if (opnd_is_near_abs_addr(ref)) {
             /* address references the default segment (data segment) */
-            dr_printf("WARNING: filtering on operand of (near abs addr) ");
-            opnd_disassemble(drcontext, ref, STDOUT);
-            dr_printf("\n");
             return false;
         }
     }
@@ -263,8 +256,12 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     ushort type;
 
     /* simple filter optimization */
-    if (!filter_data_writes(drcontext, ref))
+    if (!filter_abs_writes(ref)) {
+        dr_fprintf(STDERR, "WARNING: filtering on operand of ");
+        instr_disassemble(drcontext, where, STDERR);
+        dr_fprintf(STDERR, "\n");
         return false;
+    }
 
     size = drutil_opnd_mem_size_in_bytes(ref, where);
     type = instr_get_opcode(where);
@@ -295,12 +292,6 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
 {
     int i;
     bool did_instrument = false;
-
-    /* TODO: If we can statically determine that the operand will never
-     * write to stack memory (operand is an absolute memory reference
-     * not within stack bounds), we should fail early.
-     * TODO: drutil_expand_call convenience function?
-     */
 
     if (!instr_is_app(instr))
         return DR_EMIT_DEFAULT;
