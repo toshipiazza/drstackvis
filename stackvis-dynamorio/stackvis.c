@@ -439,13 +439,18 @@ event_pre_syscall(void *drcontext, int sysnum)
 void
 handle_stackvis_impromptu_breakpoint(void)
 {
-    dr_printf("breakpoint reached\n");
+    void *drcontext = dr_get_current_drcontext();
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    dr_fprintf(data->log, "breakpoint reached\n");
 }
 
 void
 handle_stackvis_stack_annotation(byte *pc, char *label)
 {
-    dr_printf("stack annotation <%"PRIuPTR">(%s)\n", (app_pc) pc, label);
+    void *drcontext = dr_get_current_drcontext();
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    dr_fprintf(data->log, "stack annotation <%"PRIuPTR">(%s)\n",
+            (app_pc) pc, label);
 }
 
 DR_EXPORT void

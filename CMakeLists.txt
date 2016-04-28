@@ -28,7 +28,20 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 # DAMAGE.
 
-cmake_minimum_required(VERSION 3.0)
-project(drstackvis)
+cmake_minimum_required (VERSION 3.0)
+project (DrStackVis)
 
-add_subdirectory(stackvis-dynamorio)
+add_subdirectory (stackvis-dynamorio)
+
+# installation
+set (DRSTACKVIS_VERSION 0.1.0)
+set(CONF_INCLUDE_DIRS "${CMAKE_CURRENT_BINARY_DIR}/include")
+configure_file(cmake/DrStackVisConfig.cmake.in
+  ${PROJECT_BINARY_DIR}/cmake/DrStackVisConfig.cmake @ONLY)
+configure_file(cmake/DrStackVisConfigVersion.cmake.in
+  ${PROJECT_BINARY_DIR}/cmake/DrStackVisConfigVersion.cmake @ONLY)
+install (FILES
+  "${PROJECT_BINARY_DIR}/cmake/DrStackVisConfig.cmake"
+  "${PROJECT_BINARY_DIR}/cmake/DrStackVisConfigVersion.cmake"
+  DESTINATION ${CMAKE_CURRENT_BINARY_DIR} COMPONENT dev)
+install (DIRECTORY include DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

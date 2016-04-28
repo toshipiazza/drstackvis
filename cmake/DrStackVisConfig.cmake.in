@@ -1,0 +1,11 @@
+get_filename_component(DrStackVis_cwd "${CMAKE_CURRENT_LIST_FILE}" PATH)
+set(DrStackVis_INCLUDE_DIRS "@CONF_INCLUDE_DIRS@")
+
+# For configuring target applications that use DrStackVis annotations
+function (use_DrStackVis_annotations target target_srcs)
+  set (stackvis_annotation_dir "${DrStackVis_cwd}/include/annotations/")
+  set (stackvis_annotation_dir "${DrStackVis_cwd}/include/annotations/")
+  set (stackvis_annotation_srcs "${stackvis_annotation_dir}/stackvis_annotations.c")
+  configure_DynamoRIO_annotation_sources ("${stackvis_annotation_srcs}")
+  set (${target_srcs} ${${target_srcs}} ${stackvis_annotation_srcs} PARENT_SCOPE)
+endfunction (use_DrStackVis_annotations target target_srcs)

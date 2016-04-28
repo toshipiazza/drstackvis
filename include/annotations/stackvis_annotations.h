@@ -1,7 +1,11 @@
 #ifndef _STACKVIS_ANNOTATIONS_H_
 #define _STACKVIS_ANNOTATIONS_H_ 1
 
-/* #include "dr_annotations_asm.h" */
+#include "annotations/dr_annotations_asm.h"
+
+#ifdef __GNUC__
+# pragma GCC system_header
+#endif
 
 #define STACKVIS_IMPROMPTU_BREAKPOINT() \
     stackvis_impromptu_breakpoint()
