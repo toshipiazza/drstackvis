@@ -227,27 +227,22 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
 static bool
 filter_abs_writes(opnd_t ref)
 {
-    /* On windows, SS and DS refer to the same location.
-     * This check might not work on Windows. */
-#ifndef WINDOWS
+    /* TODO: Filter absolute addresses to only reg SS.
+     * TODO: Filter relative addresses to reg SS as well (or check XSP/XBP).
+     * XXX: Windows apparently has SS == DS, how should we filter on Windows?
+     */
+#if 0
     if (opnd_is_abs_addr(ref)) {
-        /* check the selector */
         reg_t seg = opnd_get_segment(ref);
-        /* TODO: in windows, DS and SS refer to the same
-         * segment. Does this still work? */
         if (seg == DR_SEG_SS)
             return true;
         return false;
-    }
-#if 0
-    /* TODO: does this work? */
-    else if (opnd_is_base_disp(ref)) {
+    } else if (opnd_is_base_disp(ref)) {
         reg_id_t base = opnd_get_base(ref);
         if (base == DR_REG_XSP || base == DR_REG_XBP)
             return true;
         return false;
     }
-#endif
 #endif
     return true;
 }
