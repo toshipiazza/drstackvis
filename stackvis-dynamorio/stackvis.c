@@ -109,6 +109,12 @@ get_stack_bounds(app_pc *base, app_pc *ceil, app_pc sptr)
     *base = *ceil + sz;
 }
 
+static bool
+within_stack_bounds(app_pc addr, per_thread_t *data)
+{
+    return addr <= data->stk_base && addr >= data->stk_ceil;
+}
+
 static void
 memtrace(app_pc pc, bool pre_call)
 {
@@ -135,7 +141,7 @@ memtrace(app_pc pc, bool pre_call)
 
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
-        if (mem_ref->addr <= data->stk_base && mem_ref->addr >= stk_ptr) {
+        if (within_stack_bounds(mem_ref->addr, data)) {
             /* on a call instruction, the written memory is just pc */
             app_pc wmem = pre_call ? pc
                 : (app_pc) dereference_pointer(mem_ref->addr, mem_ref->size);
@@ -225,26 +231,25 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                                opnd_create_reg(reg_addr)));
 }
 
+/* Filters absolute addresses to make sure they are
+ * on the stack
+ */
 static bool
-filter_abs_writes(opnd_t ref)
+filter_abs_writes(void *drcontext, opnd_t ref)
 {
-    /* TODO: Filter absolute addresses to only reg SS.
-     * TODO: Filter relative addresses to reg SS as well (or check XSP/XBP).
-     * XXX: Windows apparently has SS == DS, how should we filter on Windows?
-     */
-#if 1
     if (opnd_is_abs_addr(ref)) {
-        reg_t seg = opnd_get_segment(ref);
-        if (seg == DR_SEG_SS)
-            return true;
-        return false;
-    } else if (opnd_is_base_disp(ref)) {
-        reg_id_t base = opnd_get_base(ref);
-        if (base == DR_REG_XSP || base == DR_REG_XBP)
-            return true;
-        return false;
+        if (opnd_is_far_abs_addr(ref)) {
+            /* these access segment selectors like %fs */
+            return false;
+        } else if (opnd_is_near_abs_addr(ref)) {
+            /* check addres bounds */
+            per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+            app_pc addr = opnd_get_addr(ref);
+            if (within_stack_bounds(addr, data))
+                return true;
+            return false;
+        }
     }
-#endif
     return true;
 }
 
@@ -260,8 +265,8 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     ushort type;
 
     /* simple filter optimization */
-    if (!filter_abs_writes(ref)) {
-        dr_fprintf(STDERR, "~~DrStackVis~~ WARNING: filtering on operand of ");
+    if (!filter_abs_writes(drcontext, ref)) {
+        dr_fprintf(STDERR, "~~DrStackVis~~ WARNING: filtering away operand of ");
         instr_disassemble(drcontext, where, STDERR);
         dr_fprintf(STDERR, "\n");
         return false;
