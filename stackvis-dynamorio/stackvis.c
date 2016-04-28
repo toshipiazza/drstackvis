@@ -106,7 +106,7 @@ get_stack_bounds(app_pc *base, app_pc *ceil, app_pc sptr)
     bool ok = dr_query_memory(sptr, ceil, &sz, NULL);
     DR_ASSERT(ok);
     /* stack starts at top of memory */
-    *base -= sz;
+    *base = *ceil + sz;
 }
 
 static void
@@ -118,12 +118,13 @@ memtrace(app_pc pc, bool pre_call)
     dr_get_mcontext(drcontext, &mcontext);
     app_pc stk_ptr = (app_pc) mcontext.xsp;
 
-    /* We preinsert on calls, so we have to manually decrement stk_ptr. */
-    if (pre_call) stk_ptr -= sizeof(app_pc);
-
     per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
     mem_ref_t *buf_ptr = BUF_PTR(data->seg_base),
               *mem_ref = (mem_ref_t *) data->buf_base;
+
+    /* We preinsert on calls, so we have to manually decrement stk_ptr. */
+    if (pre_call)
+        stk_ptr -= sizeof(app_pc);
 
     /* get the stack base, or a good estimate */
     if (data->stk_base == 0) {
@@ -231,7 +232,7 @@ filter_abs_writes(opnd_t ref)
      * TODO: Filter relative addresses to reg SS as well (or check XSP/XBP).
      * XXX: Windows apparently has SS == DS, how should we filter on Windows?
      */
-#if 0
+#if 1
     if (opnd_is_abs_addr(ref)) {
         reg_t seg = opnd_get_segment(ref);
         if (seg == DR_SEG_SS)
