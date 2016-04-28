@@ -83,7 +83,7 @@ static int      write_sysnum;
 
 #define MINSERT instrlist_meta_preinsert
 
-/******************************************************************************
+/********************************************************************************
  * STACK INSTRUMENTATION UTILITIES
  */
 
@@ -228,18 +228,14 @@ static bool
 filter_abs_writes(opnd_t ref)
 {
     /* We can really only filter absolute addresses. */
-    /* TODO: check this logic! */
     if (opnd_is_abs_addr(ref)) {
-        if (opnd_is_far_abs_addr(ref)) {
-            /* check the selector */
-            if (opnd_get_segment(ref) == DR_SEG_SS)
-                return true;
-            else
-                return false;
-        } else if (opnd_is_near_abs_addr(ref)) {
-            /* address references the default segment (data segment) */
-            return false;
-        }
+        /* check the selector */
+        reg_t seg = opnd_get_segment(ref);
+        /* TODO: in windows, DS and SS refer to the same
+         * segment. Does this still work? */
+        if (seg == DR_SEG_SS)
+            return true;
+        return false;
     }
     return true;
 }
@@ -257,7 +253,7 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
 
     /* simple filter optimization */
     if (!filter_abs_writes(ref)) {
-        dr_fprintf(STDERR, "WARNING: filtering on operand of ");
+        dr_fprintf(STDERR, "~~DrStackVis~~ WARNING: filtering on operand of ");
         instr_disassemble(drcontext, where, STDERR);
         dr_fprintf(STDERR, "\n");
         return false;
@@ -355,7 +351,7 @@ event_bb_app2app(void *drcontext, void *tag, instrlist_t *bb,
     return DR_EMIT_DEFAULT;
 }
 
-/******************************************************************************
+/********************************************************************************
  * SYSCALL HANDLERS, TO HOOK STDOUT AND STDERR
  */
 
@@ -417,7 +413,7 @@ event_pre_syscall(void *drcontext, int sysnum)
     return true;
 }
 
-/******************************************************************************
+/********************************************************************************
  * STACKVIS_* ANNOTATION HANDLERS
  */
 
@@ -446,7 +442,7 @@ handle_stackvis_stack_annotation(byte *pc, char *label)
             label, (app_pc) pc);
 }
 
-/******************************************************************************
+/********************************************************************************
  * INIT, EXIT ROUTINES AND MAIN
  */
 
