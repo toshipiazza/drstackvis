@@ -19,5 +19,6 @@ main(void)
   loop(&j);
   STACKVIS_IMPROMPTU_BREAKPOINT();
   loop(&j);
+  STACKVIS_CLEAR_ANNOTATION();
   return 0;
 }

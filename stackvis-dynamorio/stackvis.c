@@ -441,7 +441,15 @@ handle_stackvis_impromptu_breakpoint(void)
 {
     void *drcontext = dr_get_current_drcontext();
     per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_fprintf(data->log, "breakpoint reached\n");
+    dr_fprintf(data->log, "breakpoint\n");
+}
+
+void
+handle_stackvis_clear_annotation(void)
+{
+    void *drcontext = dr_get_current_drcontext();
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    dr_fprintf(data->log, "clear annotations\n");
 }
 
 void
@@ -449,8 +457,8 @@ handle_stackvis_stack_annotation(byte *pc, char *label)
 {
     void *drcontext = dr_get_current_drcontext();
     per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
-    dr_fprintf(data->log, "stack annotation <%"PRIuPTR">(%s)\n",
-            (app_pc) pc, label);
+    dr_fprintf(data->log, "label:%s addr:%"PRIuPTR"\n",
+            label, (app_pc) pc);
 }
 
 DR_EXPORT void
@@ -479,6 +487,9 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     /* register annotations */
     dr_annotation_register_call("stackvis_impromptu_breakpoint",
                                 handle_stackvis_impromptu_breakpoint, false, 0,
+                                DR_ANNOTATION_CALL_TYPE_FASTCALL);
+    dr_annotation_register_call("stackvis_clear_annotation",
+                                handle_stackvis_clear_annotation, false, 0,
                                 DR_ANNOTATION_CALL_TYPE_FASTCALL);
     dr_annotation_register_call("stackvis_stack_annotation",
                                 handle_stackvis_stack_annotation, false, 2,
