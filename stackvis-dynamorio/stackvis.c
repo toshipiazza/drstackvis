@@ -83,6 +83,10 @@ static int      write_sysnum;
 
 #define MINSERT instrlist_meta_preinsert
 
+/******************************************************************************
+ * STACK INSTRUMENTATION UTILITIES
+ */
+
 static uint64_t
 dereference_pointer(app_pc pc, ushort size)
 {
@@ -220,16 +224,50 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                                opnd_create_reg(reg_addr)));
 }
 
+static bool
+filter_data_writes(void *drcontext, opnd_t ref)
+{
+    /* We can really only filter absolute addresses. */
+    /* TODO: check this logic! */
+    if (opnd_is_abs_addr(ref)) {
+        if (opnd_is_far_abs_addr(ref)) {
+            /* check the selector */
+            if (opnd_get_segment(ref) == DR_SEG_SS)
+                return true;
+            else {
+                dr_printf("WARNING: filtering on operand of (far abs addr) ");
+                opnd_disassemble(drcontext, ref, STDOUT);
+                dr_printf("\n");
+                return false;
+            }
+        } else if (opnd_is_near_abs_addr(ref)) {
+            /* address references the default segment (data segment) */
+            dr_printf("WARNING: filtering on operand of (near abs addr) ");
+            opnd_disassemble(drcontext, ref, STDOUT);
+            dr_printf("\n");
+            return false;
+        }
+    }
+    return true;
+}
+
 /* insert inline code to add a memory reference info entry into the buffer */
-static void
+static bool
 instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
 {
     reg_id_t reg_ptr = IF_X86_ELSE(DR_REG_XCX, DR_REG_R1);
     reg_id_t reg_tmp = IF_X86_ELSE(DR_REG_XBX, DR_REG_R2);
     ushort slot_ptr  = SPILL_SLOT_2;
     ushort slot_tmp  = SPILL_SLOT_3;
-    ushort size = drutil_opnd_mem_size_in_bytes(ref, where);
-    ushort type = instr_get_opcode(where);
+    ushort size;
+    ushort type;
+
+    /* simple filter optimization */
+    if (!filter_data_writes(drcontext, ref))
+        return false;
+
+    size = drutil_opnd_mem_size_in_bytes(ref, where);
+    type = instr_get_opcode(where);
 
     /* we need two scratch registers */
     dr_save_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
@@ -244,6 +282,7 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     /* restore scratch registers */
     dr_restore_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
     dr_restore_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
+    return true;
 }
 
 /* For each memory reference app instr, we insert inline code to fill the buffer
@@ -255,6 +294,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
                       bool translating, void *user_data)
 {
     int i;
+    bool did_instrument = false;
 
     /* TODO: If we can statically determine that the operand will never
      * write to stack memory (operand is an absolute memory reference
@@ -270,8 +310,13 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
     /* insert code to add an entry for each memory write opnd */
     for (i = 0; i < instr_num_dsts(instr); i++) {
         if (opnd_is_memory_reference(instr_get_dst(instr, i)))
-            instrument_mem(drcontext, bb, instr, instr_get_dst(instr, i));
+            did_instrument |=
+                instrument_mem(drcontext, bb, instr, instr_get_dst(instr, i));
     }
+
+    /* our filter deemed it unecessary to insert instrumentation */
+    if (!did_instrument)
+        return DR_EMIT_DEFAULT;
 
     bool should_insert_clean_call =
         /* XXX i#1702: it is ok to skip a few clean calls on predicated instructions,
@@ -319,63 +364,9 @@ event_bb_app2app(void *drcontext, void *tag, instrlist_t *bb,
     return DR_EMIT_DEFAULT;
 }
 
-static void
-event_thread_init(void *drcontext)
-{
-    per_thread_t *data = dr_thread_alloc(drcontext, sizeof(per_thread_t));
-    DR_ASSERT(data != NULL);
-    drmgr_set_tls_field(drcontext, tls_idx, data);
-
-    /* Keep seg_base in a per-thread data structure so we can get the TLS
-     * slot and find where the pointer points to in the buffer.
-     */
-    data->seg_base = dr_get_dr_segment_base(tls_seg);
-    data->buf_base = dr_raw_mem_alloc(MEM_BUF_SIZE,
-                                      DR_MEMPROT_READ | DR_MEMPROT_WRITE,
-                                      NULL);
-    data->stk_base = NULL;
-    DR_ASSERT(data->seg_base != NULL && data->buf_base != NULL);
-    /* put buf_base to TLS as starting buf_ptr */
-    BUF_PTR(data->seg_base) = data->buf_base;
-
-    /* We're going to dump our data to a per-thread file.
-     * On Windows we need an absolute path so we place it in
-     * the same directory as our library. We could also pass
-     * in a path as a client argument.
-     */
-    data->log = log_file_open(client_id, drcontext, NULL, "drstackvis",
-#ifndef WINDOWS
-                              DR_FILE_CLOSE_ON_FORK |
-#endif
-                              DR_FILE_ALLOW_LARGE);
-}
-
-static void
-event_thread_exit(void *drcontext)
-{
-    per_thread_t *data;
-    data = drmgr_get_tls_field(drcontext, tls_idx);
-    log_file_close(data->log);
-    dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
-    dr_thread_free(drcontext, data, sizeof(per_thread_t));
-}
-
-static void
-event_exit(void)
-{
-    if (!dr_raw_tls_cfree(tls_offs, MEMTRACE_TLS_COUNT))
-        DR_ASSERT(false);
-
-    if (!drmgr_unregister_tls_field(tls_idx) ||
-        !drmgr_unregister_thread_init_event(event_thread_init) ||
-        !drmgr_unregister_thread_exit_event(event_thread_exit) ||
-        !drmgr_unregister_bb_app2app_event(event_bb_app2app) ||
-        !drmgr_unregister_bb_insertion_event(event_app_instruction))
-        DR_ASSERT(false);
-
-    drutil_exit();
-    drmgr_exit();
-}
+/******************************************************************************
+ * SYSCALL HANDLERS, TO HOOK STDOUT AND STDERR
+ */
 
 static int
 get_write_sysnum(void)
@@ -435,7 +426,10 @@ event_pre_syscall(void *drcontext, int sysnum)
     return true;
 }
 
-/* define annotation handlers */
+/******************************************************************************
+ * STACKVIS_* ANNOTATION HANDLERS
+ */
+
 void
 handle_stackvis_impromptu_breakpoint(void)
 {
@@ -460,6 +454,69 @@ handle_stackvis_stack_annotation(byte *pc, char *label)
     dr_fprintf(data->log, "label:%s addr:%"PRIuPTR"\n",
             label, (app_pc) pc);
 }
+
+/******************************************************************************
+ * INIT, EXIT ROUTINES AND MAIN
+ */
+
+static void
+event_thread_init(void *drcontext)
+{
+    per_thread_t *data = dr_thread_alloc(drcontext, sizeof(per_thread_t));
+    DR_ASSERT(data != NULL);
+    drmgr_set_tls_field(drcontext, tls_idx, data);
+
+    /* Keep seg_base in a per-thread data structure so we can get the TLS
+     * slot and find where the pointer points to in the buffer.
+     */
+    data->seg_base = dr_get_dr_segment_base(tls_seg);
+    data->buf_base = dr_raw_mem_alloc(MEM_BUF_SIZE,
+                                      DR_MEMPROT_READ | DR_MEMPROT_WRITE,
+                                      NULL);
+    data->stk_base = NULL;
+    DR_ASSERT(data->seg_base != NULL && data->buf_base != NULL);
+    /* put buf_base to TLS as starting buf_ptr */
+    BUF_PTR(data->seg_base) = data->buf_base;
+
+    /* We're going to dump our data to a per-thread file.
+     * On Windows we need an absolute path so we place it in
+     * the same directory as our library. We could also pass
+     * in a path as a client argument.
+     */
+    data->log = log_file_open(client_id, drcontext, NULL, "drstackvis",
+#ifndef WINDOWS
+                              DR_FILE_CLOSE_ON_FORK |
+#endif
+                              DR_FILE_ALLOW_LARGE);
+}
+
+static void
+event_thread_exit(void *drcontext)
+{
+    per_thread_t *data;
+    data = drmgr_get_tls_field(drcontext, tls_idx);
+    log_file_close(data->log);
+    dr_raw_mem_free(data->buf_base, MEM_BUF_SIZE);
+    dr_thread_free(drcontext, data, sizeof(per_thread_t));
+}
+
+static void
+event_exit(void)
+{
+    if (!dr_raw_tls_cfree(tls_offs, MEMTRACE_TLS_COUNT))
+        DR_ASSERT(false);
+
+    if (!drmgr_unregister_tls_field(tls_idx) ||
+        !drmgr_unregister_thread_init_event(event_thread_init) ||
+        !drmgr_unregister_thread_exit_event(event_thread_exit) ||
+        !drmgr_unregister_bb_app2app_event(event_bb_app2app) ||
+        !drmgr_unregister_bb_insertion_event(event_app_instruction))
+        DR_ASSERT(false);
+
+    drutil_exit();
+    drmgr_exit();
+}
+
 
 DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
