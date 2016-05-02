@@ -83,6 +83,10 @@ static int      write_sysnum;
 
 #define MINSERT instrlist_meta_preinsert
 
+/********************************************************************************
+ * STACK INSTRUMENTATION UTILITIES
+ */
+
 static uint64_t
 dereference_pointer(app_pc pc, ushort size)
 {
@@ -96,37 +100,48 @@ dereference_pointer(app_pc pc, ushort size)
 }
 
 static void
-memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
+get_stack_bounds(app_pc *base, app_pc *ceil, app_pc sptr)
 {
-    per_thread_t *data;
-    mem_ref_t *mem_ref, *buf_ptr;
+    size_t sz;
+    bool ok = dr_query_memory(sptr, ceil, &sz, NULL);
+    DR_ASSERT(ok);
+    /* stack starts at top of memory */
+    *base = *ceil + sz;
+}
 
-    data    = drmgr_get_tls_field(drcontext, tls_idx);
-    buf_ptr = BUF_PTR(data->seg_base);
-    mem_ref = (mem_ref_t *) data->buf_base;
+static bool
+within_stack_bounds(app_pc addr, per_thread_t *data)
+{
+    return addr <= data->stk_base && addr >= data->stk_ceil;
+}
+
+static void
+memtrace(app_pc pc, bool pre_call)
+{
+    /* get stack pointer */
+    void *drcontext = dr_get_current_drcontext();
+    dr_mcontext_t mcontext = {sizeof(mcontext), DR_MC_CONTROL/*only xsp*/,};
+    dr_get_mcontext(drcontext, &mcontext);
+    app_pc stk_ptr = (app_pc) mcontext.xsp;
+
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    mem_ref_t *buf_ptr = BUF_PTR(data->seg_base),
+              *mem_ref = (mem_ref_t *) data->buf_base;
+
+    /* We preinsert on calls, so we have to manually decrement stk_ptr. */
+    if (pre_call)
+        stk_ptr -= sizeof(app_pc);
 
     /* get the stack base, or a good estimate */
     if (data->stk_base == 0) {
-        /* stack starts at top of memory, but dr_query_memory
-         * gives us the bottom of it...
-         */
-        size_t sz;
-        bool ok = dr_query_memory(stk_ptr, &data->stk_base, &sz, NULL);
-        DR_ASSERT(ok);
-        data->stk_ceil = data->stk_base;
-
+        get_stack_bounds(&data->stk_base, &data->stk_ceil, stk_ptr);
         dr_fprintf(data->log, "stk_base:%"PRIuPTR" stk_ceil:%"PRIuPTR"\n",
-                data->stk_base + sz, data->stk_base);
-        data->stk_base += sz;
+                data->stk_base, data->stk_ceil);
     }
 
-    /* we preinsert on calls, so we have to
-     * manually decrement the stack pointer
-     */
-    if (pre_call) stk_ptr -= sizeof(app_pc);
     for (; mem_ref < buf_ptr; mem_ref++) {
         /* filter by whether write occurs on the stack or not */
-        if (mem_ref->addr <= data->stk_base && mem_ref->addr >= data->stk_ceil) {
+        if (within_stack_bounds(mem_ref->addr, data)) {
             /* on a call instruction, the written memory is just pc */
             app_pc wmem = pre_call ? pc
                 : (app_pc) dereference_pointer(mem_ref->addr, mem_ref->size);
@@ -134,7 +149,7 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
                                   " size:%d"
                                   " sptr:%"PRIuPTR
                                   " type:%s"
-                                  " wmem:%-20"PRIuPTR"\n",
+                                  " wmem:%"PRIuPTR"\n",
                         mem_ref->addr, mem_ref->size, stk_ptr,
                         decode_opcode_name(mem_ref->type), wmem);
         }
@@ -142,20 +157,9 @@ memtrace(void *drcontext, app_pc stk_ptr, app_pc pc, bool pre_call)
     BUF_PTR(data->seg_base) = data->buf_base;
 }
 
-/* clean_call dumps the memory reference info to the log file */
-static void
-post_mov(app_pc stk_ptr)
-{
-    void *drcontext = dr_get_current_drcontext();
-    memtrace(drcontext, stk_ptr, 0, false);
-}
-
-static void
-pre_call(app_pc stk_ptr, app_pc pc)
-{
-    void *drcontext = dr_get_current_drcontext();
-    memtrace(drcontext, stk_ptr, pc, true);
-}
+/* clean call to flush the buffer */
+static void post_mov(void)      { memtrace(0, false); }
+static void pre_call(app_pc pc) { memtrace(pc, true); }
 
 static void
 insert_load_buf_ptr(void *drcontext, instrlist_t *ilist, instr_t *where,
@@ -227,16 +231,49 @@ insert_save_addr(void *drcontext, instrlist_t *ilist, instr_t *where,
                                opnd_create_reg(reg_addr)));
 }
 
+/* Filters absolute addresses to make sure they are
+ * on the stack
+ */
+static bool
+filter_abs_writes(void *drcontext, opnd_t ref)
+{
+    if (opnd_is_abs_addr(ref)) {
+        if (opnd_is_far_abs_addr(ref)) {
+            /* these access segment selectors like %fs */
+            return false;
+        } else if (opnd_is_near_abs_addr(ref)) {
+            /* check addres bounds */
+            per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+            app_pc addr = opnd_get_addr(ref);
+            if (within_stack_bounds(addr, data))
+                return true;
+            return false;
+        }
+    }
+    return true;
+}
+
 /* insert inline code to add a memory reference info entry into the buffer */
-static void
+static bool
 instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
 {
     reg_id_t reg_ptr = IF_X86_ELSE(DR_REG_XCX, DR_REG_R1);
     reg_id_t reg_tmp = IF_X86_ELSE(DR_REG_XBX, DR_REG_R2);
     ushort slot_ptr  = SPILL_SLOT_2;
     ushort slot_tmp  = SPILL_SLOT_3;
-    ushort size = drutil_opnd_mem_size_in_bytes(ref, where);
-    ushort type = instr_get_opcode(where);
+    ushort size;
+    ushort type;
+
+    /* simple filter optimization */
+    if (!filter_abs_writes(drcontext, ref)) {
+        dr_fprintf(STDERR, "~~DrStackVis~~ WARNING: filtering away operand of ");
+        instr_disassemble(drcontext, where, STDERR);
+        dr_fprintf(STDERR, "\n");
+        return false;
+    }
+
+    size = drutil_opnd_mem_size_in_bytes(ref, where);
+    type = instr_get_opcode(where);
 
     /* we need two scratch registers */
     dr_save_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
@@ -251,6 +288,7 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
     /* restore scratch registers */
     dr_restore_reg(drcontext, ilist, where, reg_ptr, slot_ptr);
     dr_restore_reg(drcontext, ilist, where, reg_tmp, slot_tmp);
+    return true;
 }
 
 /* For each memory reference app instr, we insert inline code to fill the buffer
@@ -262,6 +300,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
                       bool translating, void *user_data)
 {
     int i;
+    bool did_instrument = false;
 
     if (!instr_is_app(instr))
         return DR_EMIT_DEFAULT;
@@ -271,8 +310,13 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
     /* insert code to add an entry for each memory write opnd */
     for (i = 0; i < instr_num_dsts(instr); i++) {
         if (opnd_is_memory_reference(instr_get_dst(instr, i)))
-            instrument_mem(drcontext, bb, instr, instr_get_dst(instr, i));
+            did_instrument |=
+                instrument_mem(drcontext, bb, instr, instr_get_dst(instr, i));
     }
+
+    /* our filter deemed it unecessary to insert instrumentation */
+    if (!did_instrument)
+        return DR_EMIT_DEFAULT;
 
     bool should_insert_clean_call =
         /* XXX i#1702: it is ok to skip a few clean calls on predicated instructions,
@@ -285,32 +329,22 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb,
          * exclusive monitor state.
          */
         IF_ARM(&& !instr_is_exclusive_store(instr));
+    if (!should_insert_clean_call)
+        return DR_EMIT_DEFAULT;
 
-    /* insert code to call clean_call for processing the buffer, along with stack pointer */
-    if (should_insert_clean_call) {
-        opnd_t sptr = opnd_create_reg(IF_X86_ELSE(DR_REG_XSP, DR_REG_SP));
-        if (!instr_is_call(instr)) {
-            /* If the instruction isn't a call, then we should just operate after the instruction
-             * so we can get the memory written easily.
-             */
-            dr_insert_clean_call(drcontext, bb, instr_get_next(instr),
-                                 (void *) post_mov, false, 1, sptr);
-        } else {
-            /* We don't want to postinsert calls because then writes are perceived to
-             * be out of order. Also, calls are a special case; we can get the value
-             * pushed onto the stack from the first source operand.
-             */
-            opnd_t pc = instr_get_src(instr, 0);
-            if (opnd_is_pc(pc)) {
-                /* If it's not a reg, it's an absolute value. We pass it in
-                 * as an INTPTR (arm = INT)
-                 */
-                app_pc pc_val = opnd_get_pc(pc);
-                pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(pc_val);
-            }
-            dr_insert_clean_call(drcontext, bb, instr,
-                                 (void *) pre_call, false, 2, sptr, pc);
-        }
+    /* We dump the writes to stdout. In the case of a call instruction, we pre-insert
+     * instrumentation so writes appear in order. Otherwise, we post-insert for ease
+     * of getting the written value.
+     */
+    if (!instr_is_call(instr)) {
+        instr_t *next = instr_get_next(instr);
+        dr_insert_clean_call(drcontext, bb, next, (void *) post_mov, false, 0);
+    } else {
+        /* for call instruction, this is xip to be pushed onto the stack */
+        byte * curr_pc = instr_get_app_pc(instr);
+        app_pc next_pc = decode_next_pc(drcontext, curr_pc);
+        opnd_t pc = IF_X86_ELSE(OPND_CREATE_INTPTR,OPND_CREATE_INT)(next_pc);
+        dr_insert_clean_call(drcontext, bb, instr, (void *) pre_call, false, 1, pc);
     }
 
     return DR_EMIT_DEFAULT;
@@ -329,6 +363,101 @@ event_bb_app2app(void *drcontext, void *tag, instrlist_t *bb,
     }
     return DR_EMIT_DEFAULT;
 }
+
+/********************************************************************************
+ * SYSCALL HANDLERS, TO HOOK STDOUT AND STDERR
+ */
+
+static int
+get_write_sysnum(void)
+{
+#ifdef UNIX
+    return SYS_write;
+#else
+    byte *entry;
+    module_data_t *data = dr_lookup_module_by_name("ntdll.dll");
+    DR_ASSERT(data != NULL);
+    entry = (byte *) dr_get_proc_address(data->handle, "NtWriteFile");
+    DR_ASSERT(entry != NULL);
+    dr_free_module_data(data);
+    return drmgr_decode_sysnum_from_wrapper(entry);
+#endif
+}
+
+static bool
+event_filter_syscall(void *drcontext, int sysnum)
+{
+    return sysnum == write_sysnum;
+}
+
+#ifdef UNIX
+# define FD_ARG 0
+# define OUTPUT_ARG 1
+# define SIZE_ARG 2
+#else
+# define FD_ARG 0
+# define OUTPUT_ARG 5
+# define SIZE_ARG 6
+#endif
+
+/* generally strive to make this function very thread-safe */
+static bool
+event_pre_syscall(void *drcontext, int sysnum)
+{
+    if (sysnum == write_sysnum) {
+        per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+
+        /* get info */
+        int fd = dr_syscall_get_param(drcontext, FD_ARG);
+        if (fd == STDERR || fd == STDOUT) {
+            byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
+            size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
+
+            /* Base64encode_len provides null byte so no size+1 */
+            size_t base64_len = Base64encode_len(size);
+            byte *base64 = malloc(base64_len);
+            Base64encode(base64, out, size);
+
+            dr_fprintf(data->log, "%s:%s\n",
+                       fd == STDERR ? "stderr" : "stdout" , base64);
+            free(base64);
+        }
+    }
+    return true;
+}
+
+/********************************************************************************
+ * STACKVIS_* ANNOTATION HANDLERS
+ */
+
+void
+handle_stackvis_impromptu_breakpoint(void)
+{
+    void *drcontext = dr_get_current_drcontext();
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    dr_fprintf(data->log, "breakpoint\n");
+}
+
+void
+handle_stackvis_clear_annotation(void)
+{
+    void *drcontext = dr_get_current_drcontext();
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    dr_fprintf(data->log, "clear annotations\n");
+}
+
+void
+handle_stackvis_stack_annotation(byte *pc, char *label)
+{
+    void *drcontext = dr_get_current_drcontext();
+    per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
+    dr_fprintf(data->log, "label:%s addr:%"PRIuPTR"\n",
+            label, (app_pc) pc);
+}
+
+/********************************************************************************
+ * INIT, EXIT ROUTINES AND MAIN
+ */
 
 static void
 event_thread_init(void *drcontext)
@@ -388,74 +517,6 @@ event_exit(void)
     drmgr_exit();
 }
 
-static int
-get_write_sysnum(void)
-{
-    /* XXX: we could use the "drsyscall" Extension from the Dr. Memory Framework
-     * (DRMF) to obtain the number of any system call from the name.
-     */
-#ifdef UNIX
-    return SYS_write;
-#else
-    byte *entry;
-    module_data_t *data = dr_lookup_module_by_name("ntdll.dll");
-    DR_ASSERT(data != NULL);
-    entry = (byte *) dr_get_proc_address(data->handle, "NtWriteFile");
-    DR_ASSERT(entry != NULL);
-    dr_free_module_data(data);
-    return drmgr_decode_sysnum_from_wrapper(entry);
-#endif
-}
-
-static bool
-event_filter_syscall(void *drcontext, int sysnum)
-{
-    return sysnum == write_sysnum;
-}
-
-#ifdef UNIX
-# define FD_ARG 0
-# define OUTPUT_ARG 1
-# define SIZE_ARG 2
-#else
-# define FD_ARG 0
-# define OUTPUT_ARG 5
-# define SIZE_ARG 6
-#endif
-
-#define PAGESIZE 0x1000
-#define ROUNDUP(x) ((x + (PAGESIZE)-1) & ~((PAGESIZE)-1))
-
-/* generally strive to make this function very thread-safe */
-static bool
-event_pre_syscall(void *drcontext, int sysnum)
-{
-    if (sysnum == write_sysnum) {
-        per_thread_t *data = drmgr_get_tls_field(drcontext, tls_idx);
-
-        /* get info */
-        int fd = dr_syscall_get_param(drcontext, FD_ARG);
-        if (fd == STDERR || fd == STDOUT) {
-            byte *out = (byte *) dr_syscall_get_param(drcontext, OUTPUT_ARG);
-            size_t size = dr_syscall_get_param(drcontext, SIZE_ARG);
-
-            /* Base64encode_len provides null byte so no size+1.
-             * Also, dr_raw_mem_alloc requires that allocated
-             * memory is rounded up to nearest page boundary.
-             */
-            size_t base64_len = Base64encode_len(size);
-            byte *base64 = dr_raw_mem_alloc(ROUNDUP(base64_len),
-                                            DR_MEMPROT_READ | DR_MEMPROT_WRITE,
-                                            NULL);
-            Base64encode(base64, out, size);
-
-            dr_fprintf(data->log, "%s:%s\n",
-                       fd == STDERR ? "stderr" : "stdout" , base64);
-            dr_raw_mem_free(base64, ROUNDUP(base64_len));
-        }
-    }
-    return true;
-}
 
 DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
@@ -479,6 +540,17 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
                                                  event_app_instruction,
                                                  NULL))
         DR_ASSERT(false);
+
+    /* register annotations */
+    dr_annotation_register_call("stackvis_impromptu_breakpoint",
+                                handle_stackvis_impromptu_breakpoint, false, 0,
+                                DR_ANNOTATION_CALL_TYPE_FASTCALL);
+    dr_annotation_register_call("stackvis_clear_annotation",
+                                handle_stackvis_clear_annotation, false, 0,
+                                DR_ANNOTATION_CALL_TYPE_FASTCALL);
+    dr_annotation_register_call("stackvis_stack_annotation",
+                                handle_stackvis_stack_annotation, false, 2,
+                                DR_ANNOTATION_CALL_TYPE_FASTCALL);
 
     client_id = id;
 

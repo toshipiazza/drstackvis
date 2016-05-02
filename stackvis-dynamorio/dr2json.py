@@ -42,40 +42,60 @@ WRITE_OCCR = re.compile("addr:(\S+) size:(\S+) sptr:(\S+) type:(\S+) wmem:(\S+)"
 STDERR_OUT = re.compile("stderr:(\S+)")
 STDOUT_OUT = re.compile("stdout:(\S+)")
 
+BREAKPOINT = re.compile("breakpoint")
+CLEAR_NOTE = re.compile("clear annotations")
+INTRO_NOTE = re.compile("label:(\S+) addr:(\S+)")
+
 if __name__ == '__main__':
     tick = 0
-    # even though we *can* get other file descriptors,
-    # we don't particularly care about them for navigating
     data = {
         "writes": [ ],
         "stderr": { },
-        "stdout": { }
+        "stdout": { },
+        "bpoint": [ ],
             }
+    annotations = { }
 
     for i in fileinput.input():
         res = STK_BOUNDS.match(i)
         if res is not None:
             data["stk_base"] = int(res.group(1))
             data["stk_ceil"] = int(res.group(2))
+            continue
+        res = WRITE_OCCR.match(i)
+        if res is not None:
+            addr = int(res.group(1))
+            data["writes"].append({
+                "addr":addr,
+                "size":int(res.group(2)),
+                "sptr":int(res.group(3)),
+                "type":res.group(4),
+                "wmem":int(res.group(5)),
+                "note":[] if addr not in annotations else annotations[addr]
+                    })
+            tick += 1 # "ticks" refer to writes
+            continue
+        res = STDOUT_OUT.match(i)
+        if res is not None:
+            data["stdout"][tick] = res.group(1)
+            continue
+        res = STDERR_OUT.match(i)
+        if res is not None:
+            data["stderr"][tick] = res.group(1)
+            continue
+        res = BREAKPOINT.match(i)
+        if res is not None:
+            data["bpoint"].append(tick)
+            continue
+        res = CLEAR_NOTE.match(i)
+        if res is not None:
+            annotations = { }
+            continue
+        res = INTRO_NOTE.match(i)
+        if res is not None:
+            try: annotations[int(res.group(2))].append(res.group(1))
+            except: annotations[int(res.group(2))] = [res.group(1)]
+            continue
         else:
-            res = WRITE_OCCR.match(i)
-            if res is not None:
-                data["writes"].append({
-                    "addr":int(res.group(1)),
-                    "size":int(res.group(2)),
-                    "sptr":int(res.group(3)),
-                    "type":res.group(4),
-                    "wmem":int(res.group(5))
-                        })
-                tick += 1 # "ticks" refer to writes
-            else:
-                res = STDOUT_OUT.match(i)
-                if res is not None:
-                    data["stdout"][tick] = res.group(1)
-                else:
-                    res = STDERR_OUT.match(i)
-                    if res is not None:
-                        data["stderr"][tick] = res.group(1)
-                    else:
-                        print("Error: Could not understand line {}".format(i), file=sys.stderr)
+            print("Error: Could not understand line {}".format(i), file=sys.stderr)
     print(json.dumps(data, indent=4))
