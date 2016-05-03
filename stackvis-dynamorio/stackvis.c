@@ -91,11 +91,13 @@ static uint64_t
 dereference_pointer(app_pc pc, ushort size)
 {
     switch (size) {
-    case 1:  return *(uint8_t *)  pc;
-    case 2:  return *(uint16_t *) pc;
-    case 4:  return *(uint32_t *) pc;
-    case 8:  return *(uint64_t *) pc;
-    default: return 0;
+    case 1: return *(uint8_t *)  pc;
+    case 2: return *(uint16_t *) pc;
+    case 4: return *(uint32_t *) pc;
+    case 8: return *(uint64_t *) pc;
+    default:
+        DR_ASSERT(false);
+        return 0;
     }
 }
 
@@ -133,7 +135,7 @@ memtrace(app_pc pc, bool pre_call)
         stk_ptr -= sizeof(app_pc);
 
     /* get the stack base, or a good estimate */
-    if (data->stk_base == 0) {
+    if (data->stk_base == (app_pc) -1) {
         get_stack_bounds(&data->stk_base, &data->stk_ceil, stk_ptr);
         dr_fprintf(data->log, "stk_base:%"PRIuPTR" stk_ceil:%"PRIuPTR"\n",
                 data->stk_base, data->stk_ceil);
@@ -266,9 +268,11 @@ instrument_mem(void *drcontext, instrlist_t *ilist, instr_t *where, opnd_t ref)
 
     /* simple filter optimization */
     if (!filter_abs_writes(drcontext, ref)) {
-        dr_fprintf(STDERR, "~~DrStackVis~~ WARNING: filtering away operand of ");
+#ifdef SHOW_RESULTS
+        dr_fprintf(STDERR, "~~DrStackVis~~ WARNING: preemptive filter away operand (");
         instr_disassemble(drcontext, where, STDERR);
-        dr_fprintf(STDERR, "\n");
+        dr_fprintf(STDERR, ")\n");
+#endif
         return false;
     }
 
@@ -473,7 +477,10 @@ event_thread_init(void *drcontext)
     data->buf_base = dr_raw_mem_alloc(MEM_BUF_SIZE,
                                       DR_MEMPROT_READ | DR_MEMPROT_WRITE,
                                       NULL);
-    data->stk_base = NULL;
+
+    /* we make our stack bounds "infinite" for now */
+    data->stk_base = (app_pc) -1; /* this appears as 0xFFFF... , unsigned */
+    data->stk_ceil = (app_pc)  0;
     DR_ASSERT(data->seg_base != NULL && data->buf_base != NULL);
     /* put buf_base to TLS as starting buf_ptr */
     BUF_PTR(data->seg_base) = data->buf_base;
