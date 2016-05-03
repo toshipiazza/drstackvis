@@ -1,37 +1,61 @@
 import controlP5.*; //library used for UI/string input
 import javax.xml.bind.DatatypeConverter; //b64
 import javax.swing.JFileChooser;
+import java.lang.*;
 
 ControlP5 cp5;
 
 //start helper functions here
-void parseJSON(JSONObject j){
+
+ArrayList<Time> parseJSON(JSONObject j){
   //TODO: read in stdout, stderr
+  ArrayList<Time> T = new ArrayList();
   long stk_ceil = (long) j.getDouble("stk_ceil");
   long stk_base = (long) j.getDouble("stk_base");
   
   JSONArray writes = j.getJSONArray("writes");
-  
-  println("stk_ceil: " + stk_ceil);
-  println("stk_base: " + stk_base);
-  for (int i=0; i<writes.size(); i++){ //go through writes
+  //create initial Time
+  Time Initial = new Time();
+  for (int i=0; i<writes.size(); i++){ //go through writes    
+    Time t = new Time(Initial);
+    
     JSONObject block = writes.getJSONObject(i);
     long sptr = (long) block.getDouble("sptr");
     long addr = (long) block.getDouble("addr");
     long wmem = (long) block.getDouble("wmem");
     int size = block.getInt("size");
+     
+    Mem m = new Mem(sptr, addr, wmem, size);
+   
+    t.Blocks.add(m);
+    T.add(t);
+    Initial = t;  
     
-    println("sptr: " + sptr +
-            "\taddr: " + addr +
-            "\twmem: " + wmem +
-            "\tsize: " + size + "\n");
+  }
+  testing(T);
+  return T;
+}
 
-    //create a class object Mem with these items
-    //also need to convert double to hex
+//
+void testing(ArrayList<Time> T){
+  for (int i=0; i<T.size(); i++){
+    Time time = T.get(i);
+    println("========\nTIME: " + i);
+    for (int j=0; j<time.Blocks.size();j++){
+      Mem m = time.Blocks.get(j);
+      println("\tMEM[" + j + "]");
+      m.Print();
+      //println("\tsptr: " + Long.toHexString(m.sptr));
+      //println("\taddr: " +  Long.toHexString(m.addr));
+      //println("\twmem: " +  Long.toHexString(m.wmem));
+      //println("\tsize: " + m.size + "\n");
+      
+    }
   }
 }
 
 void setup(){
+  size(800,800);
   //expose a file chooser to the user, read that json in
 
   JFileChooser chooser = new JFileChooser();
@@ -42,8 +66,8 @@ void setup(){
   if (returnVal == JFileChooser.APPROVE_OPTION) {
     //read in the json
     JSONObject j = loadJSONObject(chooser.getSelectedFile().getAbsoluteFile());
-    parseJSON(j);
-    println("json file has been read"); //confirm end of readjson
+    ArrayList<Time> TIME = parseJSON(j);
+    
   } else {
     println("ERROR: file not chosen...");
     exit();
@@ -52,15 +76,13 @@ void setup(){
 
 void draw(){
   //TODO
+  
+  //print stack
+  //print stdout
+  //print stderr
+  //print button for forward
+  //print button for back
+    //if forward or back, go forward/back a time thing
+    //redraw
+  
 }
-
-//input path
-
-//read json file
-// address
-// size
-// spointer
-// wmem
-
-//create objects from the json
-// determine height
