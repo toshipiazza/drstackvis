@@ -76,7 +76,7 @@ void setup(){
 
 void draw(){
   //TODO
- 
+  
   //print stack
   //print stdout
   //print stderr
