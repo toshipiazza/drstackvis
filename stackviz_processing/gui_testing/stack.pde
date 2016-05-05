@@ -71,6 +71,7 @@ class Stack {
   public List<String> convertByteStack2Stack(Addr[] byteStack) {
     List<String> stack = new ArrayList();
     int i;
+    // skip empty lines
     for (i = 0; i < byteStack.length; ++i) {
       if (byteStack[i].used)
         break;
