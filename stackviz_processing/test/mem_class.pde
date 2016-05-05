@@ -20,7 +20,7 @@ class Time {
     }   
   }
 }
-
+/*
 class Mem {
   long sptr;
   long addr;
@@ -44,4 +44,4 @@ class Mem {
     println("wmem: 0x" + w);
     println("size: " + s);
   }
-}
+}*/
