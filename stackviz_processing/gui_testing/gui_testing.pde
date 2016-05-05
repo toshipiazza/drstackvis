@@ -5,23 +5,40 @@ import javax.swing.JFileChooser;
 ControlP5 cp5;
 ScrollableList stack;
 Stack s;
-Textarea stderr, stdout;
+Textarea stderrTextArea, stdoutTextArea;
 
 Stack parseJSON(JSONObject j) {
-  Stack s = new Stack();
-  s.ceil = (long) j.getDouble("stk_ceil");
-  s.base = (long) j.getDouble("stk_base");
-
   JSONArray writes = j.getJSONArray("writes");
+  List<Mem> smem = new ArrayList();
+  Map<Integer, String> stdout = new HashMap();
+  Map<Integer, String> stderr = new HashMap();
+
+  // iterate over writes
   for (int i = 0; i < writes.size(); ++i) {
     JSONObject block = writes.getJSONObject(i);
-    Stack.Mem mem = s.new Mem();
-    mem.sptr = block.getLong("sptr");
-    mem.addr = block.getLong("addr");
-    mem.wmem = (long) block.getDouble("wmem");
-    mem.size = block.getInt("size");
-    s.mem.add(mem);
+    smem.add(new Mem(block.getLong("sptr"),
+                     block.getLong("addr"),
+                     (long) block.getDouble("wmem"),
+                     block.getInt("size")));
   }
+
+  // iterate over stderr
+  Iterator<?> keys = j.getJSONObject("stderr").keys().iterator();
+  while (keys.hasNext()) {
+    String tick = (String) keys.next();
+    stderr.put(Integer.parseInt(tick), j.getJSONObject("stderr").getString(tick));
+  }
+
+  // iterate over stdout
+  keys = j.getJSONObject("stdout").keys().iterator();
+  while (keys.hasNext()) {
+    String tick = (String) keys.next();
+    stdout.put(Integer.parseInt(tick), j.getJSONObject("stdout").getString(tick));
+  }
+
+  Stack s = new Stack((long) j.getDouble("stk_ceil"),
+                      (long) j.getDouble("stk_base"), smem,
+                      stderr, stdout);
   return s;
 }
 
@@ -33,8 +50,9 @@ JSONObject chooseFile() {
     return loadJSONObject(chooser.getSelectedFile().getAbsoluteFile());    
   } else {
     println("ERROR: file not chosen...");
-    return null;
+    exit();
   }
+  return null;
 }
 
 void setup() {
@@ -60,31 +78,44 @@ void setup() {
     .setType(ScrollableList.LIST);
 
   // init std{err,in}
-  stdout = cp5.addTextarea("stdout")
+  stdoutTextArea = cp5.addTextarea("stdout")
     .setPosition(280, 50)
     .setSize(300, 200)
+    .setColor(color(128))
     .setColorBackground(color(255,100))
+    .setColorForeground(color(255,100))
     .setLineHeight(14);
-  stderr = cp5.addTextarea("stderr")
+  stderrTextArea = cp5.addTextarea("stderr")
     .setPosition(280, 300)
     .setSize(300, 200)
+    .setColor(color(128))
     .setColorBackground(color(255,100))
+    .setColorForeground(color(255,100))
     .setLineHeight(14);
 
   JSONObject j = chooseFile();
   s = parseJSON(j);
   Stack.Addr[] byteStack = s.getStack(1);
   stack.addItems(s.convertByteStack2Stack(byteStack));
+  updateOutput();
+}
+
+void updateOutput() {
+  if (s.hasStdoutInPipe())
+     stdoutTextArea.setText(stdoutTextArea.getText() + new String(s.getStdoutInPipe())); 
+  if (s.hasStderrInPipe())
+     stderrTextArea.setText(stderrTextArea.getText() + new String(s.getStderrInPipe()));
 }
 
 public void Forward() {
-  Stack.Addr[] byteStack = s.getStack(s.tick + 1);
+  int tick = s.tick;
+  Stack.Addr[] byteStack = s.getStack(tick + 1);
   stack.clear();
-  stack.addItems(s.convertByteStack2Stack(byteStack));
+  stack.addItems(s.convertByteStack2Stack(byteStack)); 
+  updateOutput();
 }
 
 public void FastForward() {
-  // TODO
   println("METHOD NOT IMPLEMENTED");
 }
 
