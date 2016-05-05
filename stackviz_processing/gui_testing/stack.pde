@@ -1,17 +1,49 @@
+import java.util.*;
+import javax.xml.bind.DatatypeConverter;
+
+public class Mem {
+  private long sptr, addr, wmem;
+  private int size;
+
+  Mem(long s, long a, long w, int sz) {
+    sptr = s;
+    addr = a;
+    wmem = w;
+    size = sz;
+  }
+}
+
 class Stack {
-  public List<Mem> mem = new ArrayList();
-  public long ceil, base;
+  private List<Mem> mem;
+  private long ceil, base;
   private int tick = 0;
+
+  /* maps tick -> pipe */
+  private Map<Integer, String> stderr;
+  private Map<Integer, String> stdout;
+
+  /* internal representation */
   private Addr[] stack = new Addr[0];
 
-  public class Mem {
-    public long sptr, addr, wmem;
-    public int size;
+  Stack(long ceil, long base, List<Mem> mem, Map<Integer, String> err, Map<Integer, String> out) {
+    this.ceil = ceil;
+    this.base = base;
+    this.mem = mem;
+    stderr = err;
+    stdout = out;
   }
 
   public class Addr {
     boolean used;
     byte   value;
+  }
+
+  public long getCeil() {
+    return ceil;
+  }
+
+  public long getBase() {
+    return base;
   }
 
   private boolean inStackBounds(long addr) {
@@ -28,7 +60,7 @@ class Stack {
 
   private Addr[] resizeStack(Addr[] stack, int new_size) {
     Addr[] addr = new Addr[new_size];
-    for (int i = 0; i < stack.length; ++i)
+    for (int i = 0; i < stack.length && i < addr.length; ++i)
       addr[i] = stack[i];
     for (int i = stack.length; i < addr.length; ++i)
       addr[i] = new Addr();
@@ -91,6 +123,22 @@ class Stack {
     if (addr.used == true)
       return String.format("%02X", addr.value);
     return "??";
+  }
+
+  public boolean hasStdoutInPipe() {
+    return stdout.containsKey(tick);
+  }
+
+  public byte[] getStdoutInPipe() {
+    return DatatypeConverter.parseBase64Binary(stdout.get(tick));
+  }
+
+  public boolean hasStderrInPipe() {
+    return stderr.containsKey(tick);
+  }
+
+  public byte[] getStderrInPipe() {
+    return DatatypeConverter.parseBase64Binary(stderr.get(tick));
   }
 }
 // vim:foldmethod=syntax:foldlevel=0
