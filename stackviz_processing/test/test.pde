@@ -2,6 +2,7 @@ import controlP5.*; //library used for UI/string input
 import javax.xml.bind.DatatypeConverter; //b64
 import javax.swing.JFileChooser;
 import java.lang.*;
+import java.util.*;
 
 ControlP5 cp5;
 //GUI VARIABLES:
@@ -27,35 +28,41 @@ ControlP5 cp5;
   ArrayList<Time> TIME;
   int current = 0;
   
+  ScrollableList stack;
+  Stack s;
+  Textarea stderr, stdout;
+  List<String> StringQueue = new ArrayList<String>();
+  
 
 //start helper functions here
-ArrayList<Time> parseJSON(JSONObject j){
-  //TODO: read in stdout, stderr
-  ArrayList<Time> T = new ArrayList();
-  long stk_ceil = (long) j.getDouble("stk_ceil");
-  long stk_base = (long) j.getDouble("stk_base");
-  
+Stack parseJSON(JSONObject j) {
+  Stack s = new Stack();
+  s.ceil = (long) j.getDouble("stk_ceil");
+  s.base = (long) j.getDouble("stk_base");
+
   JSONArray writes = j.getJSONArray("writes");
-  //create initial Time
-  Time Initial = new Time();
-  for (int i=0; i<writes.size(); i++){ //go through writes    
-    Time t = new Time(Initial);
-    
+  for (int i = 0; i < writes.size(); ++i) {
     JSONObject block = writes.getJSONObject(i);
-    long sptr = (long) block.getDouble("sptr");
-    long addr = (long) block.getDouble("addr");
-    long wmem = (long) block.getDouble("wmem");
-    int size = block.getInt("size");
-     
-    Mem m = new Mem(sptr, addr, wmem, size);
-   
-    t.Blocks.add(m);
-    T.add(t);
-    Initial = t;  
-    
+    Stack.Mem mem = s.new Mem();
+    mem.sptr = block.getLong("sptr");
+    mem.addr = block.getLong("addr");
+    mem.wmem = (long) block.getDouble("wmem");
+    mem.size = block.getInt("size");
+    s.mem.add(mem);
   }
-  testing(T);
-  return T;
+  return s;
+}
+
+JSONObject chooseFile() {
+  JFileChooser chooser = new JFileChooser();
+  chooser.setFileFilter(chooser.getAcceptAllFileFilter());
+  int returnVal = chooser.showOpenDialog(null);
+  if (returnVal == JFileChooser.APPROVE_OPTION) {
+    return loadJSONObject(chooser.getSelectedFile().getAbsoluteFile());    
+  } else {
+    println("ERROR: file not chosen...");
+    return null;
+  }
 }
 
 //a helper function to the programmer: prints the contents of TIME
@@ -90,21 +97,26 @@ void setup(){
     STDERR = createShape(RECT, 775-out_width, 775-out_width,out_width,out_width-25);
   
   
-  //expose a file chooser to the user, read that json in
-  JFileChooser chooser = new JFileChooser();
-  //TODO: accept only json files; involves creating a custom
-  //FileFilter class that overrides boolean accept(File f);
-  chooser.setFileFilter(chooser.getAcceptAllFileFilter());
-  int returnVal = chooser.showOpenDialog(null);
-  if (returnVal == JFileChooser.APPROVE_OPTION) {
-    //read in the json
-    JSONObject j = loadJSONObject(chooser.getSelectedFile().getAbsoluteFile());
-    TIME = parseJSON(j);
-    
-  } else {
-    println("ERROR: file not chosen...");
-    exit();
+  JSONObject j = chooseFile();
+  s = parseJSON(j);
+  Stack.Addr[] byteStack = s.getStack(1);
+  StringQueue = s.convertByteStack2Stack(byteStack);
+  
+  for (int i=0; i<StringQueue.size();i++){
+    String thing = StringQueue.get(i);
+    println("queue[" + i + "]: " + thing);
   }
+}
+
+public void Forward() {
+  Stack.Addr[] byteStack = s.getStack(s.tick + 1);
+  StringQueue.clear();
+  StringQueue = s.convertByteStack2Stack(byteStack);
+}
+
+public void FastForward() {
+  // TODO
+  println("METHOD NOT IMPLEMENTED");
 }
 
 void draw(){
@@ -118,24 +130,24 @@ void draw(){
   shape(b_forward,0,0);
     text("Forward",269,50);
     fill(50,50,50);
+  int c = current + 1;
+  text("Write " + c + "/" + s.mem.size(), 120, 50);
   shape(STDOUT);
   shape(STDERR);
+  
   
   //stdout
   textFont(AvenirHeavy,18);
   text("stdout",425,45);
   text("stderr",425,777-out_width-10);
   textFont(AvenirBook,13);
-  String s = "Bacon ipsum dolor amet strip steak turkey drumstick corned beef jowl pancetta capicola ham hock beef pork belly landjaeger. Frankfurter beef doner, tail short loin turducken ground round swine turkey short ribs bacon spare ribs boudin. Sirloin capicola doner alcatra tenderloin pork chuck turkey. Short loin sausage porchetta biltong, boudin shank short ribs picanha corned beef pork belly t-bone pastrami ground round swine leberkas. Pork belly drumstick brisket tri-tip porchetta jerky. Pork belly leberkas tenderloin pork chop prosciutto kevin biltong tongue. Capicola kevin rump brisket shankle cupim t-bone tri-tip leberkas ham hock filet mignon boudin.\n\nPork chop doner pig capicola ham hock alcatra turducken fatback tongue tenderloin pancetta rump t-bone flank. Chuck flank doner prosciutto ribeye. Meatloaf ground round rump, shoulder bresaola chicken tri-tip ribeye short loin salami ball tip pancetta prosciutto venison pig. Rump turkey picanha tri-tip, tenderloin frankfurter kevin alcatra pig shoulder. Pork loin frankfurter porchetta turkey pancetta doner leberkas bacon spare ribs flank tongue picanha.\n\nTail swine pig, sausage pancetta tenderloin tongue meatball short ribs fatback venison pork belly. Jowl short loin tail tongue bresaola. Turkey doner ham hock shank. Sausage porchetta salami pig. Shoulder ham hock jowl swine jerky pork loin pancetta pork belly fatback. Cow sirloin pork chop filet mignon ribeye chuck capicola prosciutto. Pork loin bacon pig, sirloin chicken biltong meatloaf pancetta picanha shankle turducken ham doner filet mignon.\n\nBall tip tail jowl, prosciutto ground round shankle t-bone salami pancetta landjaeger. Pancetta tri-tip kevin swine. Ribeye pork loin salami landjaeger venison. Pork loin porchetta tongue kielbasa t-bone capicola. Ball tip ribeye venison, fatback chicken alcatra turkey.\n\nTail pork loin cow pancetta short ribs sausage. Ham hock drumstick pork belly, capicola spare ribs cupim t-bone porchetta. Swine rump tenderloin pork belly, shankle boudin flank pancetta chuck short ribs tail landjaeger sirloin. Jowl sausage shoulder leberkas tongue. Chuck biltong short ribs leberkas kielbasa shoulder ham hock shank swine flank pork chop. Fatback doner hamburger beef bacon spare ribs meatloaf venison frankfurter jowl flank pork loin pig.";
+  String s = "this is some output";
   text(s,777-out_width,52,out_width-2,out_width-27);
   
   //stderr
   text(s,777-out_width, 777-out_width,out_width-2,out_width-27);
   
   //stack
-  ArrayList<String> queue = new ArrayList();
-  //call function here that returns the thing
-  ArrayList<PShape> canvas = new ArrayList();
   int y_val = 70;
   int colors = 100;
   for (int i=0; i<=7;++i){
@@ -143,9 +155,9 @@ void draw(){
     int y_val2 = y_val + 20;
     toprint = createShape(RECT,60,y_val,240,y_val2);
     toprint.setFill(color(colors));
-    canvas.add(toprint);
+    //canvas.add(toprint);
     shape(toprint);
-    println("[" + i + "]\ty1: " + y_val + "\ty2: " + y_val2);
+    //println("[" + i + "]\ty1: " + y_val + "\ty2: " + y_val2);
     y_val += 20;
     colors += 20;
   }
