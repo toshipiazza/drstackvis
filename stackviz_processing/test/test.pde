@@ -214,15 +214,15 @@ color colorize(String type){
   println(type);
   if (type.equals("call")){
     println("recognized call");
-    return #FFC500;
+    return #ffd557;
   }
   
   if (type.equals("push")){
-    return #68BDBD;
+    return #81fbfc;
   }
   
   if (type.equals("mov")){
-   return #D74D50; 
+   return #f7b1a4; 
   }
   
   return 220;
