@@ -24,7 +24,6 @@ ControlP5 cp5;
     PFont LatoH18;
 
 //integers to access things and data structure
-  ArrayList<Time> TIME;
   int current = 1;
   
   ScrollableList stack;
@@ -46,6 +45,7 @@ Stack parseJSON(JSONObject j) {
     smem.add(new Mem(block.getLong("sptr"),
                      block.getLong("addr"),
                      (long) block.getDouble("wmem"),
+                     block.getString("type"),
                      block.getInt("size")));
   }
 
@@ -155,12 +155,26 @@ void draw(){
   for (int i=0; i<StringQueue.size();i++){
     PShape toprint = new PShape();
     toprint = createShape(RECT,40,y,285,20);
-    toprint.setFill(color(230));
-    shape(toprint);
-    
-  
+    color to_color = 220;
     textFont(FiraR14,14);
-    String string = StringQueue.get(i);
+    
+    //get address to find type
+    String string = StringQueue.get(i);  
+    String[] parsed = split(string,' ');
+    String address = parsed[0].replace("[","");
+    address = address.replace("]","");
+    long ADDR = Long.valueOf(address).longValue();
+    
+    for (int j=0; j<s.mem.size();j++){
+      Mem m = s.mem.get(j);
+      if (m.addr == ADDR){
+        to_color = colorize(m.type);
+        break;
+      }
+    }    
+    
+    toprint.setFill(to_color);
+    shape(toprint);
     text(string,45,y+14);
     y += 20;
     
@@ -194,6 +208,24 @@ void update(int x, int y){
     goFor = true;
     b_forward.setFill(color(#50c89b));
   }
+}
+
+color colorize(String type){
+  println(type);
+  if (type.equals("call")){
+    println("recognized call");
+    return #FFC500;
+  }
+  
+  if (type.equals("push")){
+    return #68BDBD;
+  }
+  
+  if (type.equals("mov")){
+   return #D74D50; 
+  }
+  
+  return 220;
 }
 
 void mousePressed(){

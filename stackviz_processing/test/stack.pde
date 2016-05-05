@@ -4,12 +4,15 @@ import javax.xml.bind.DatatypeConverter;
 public class Mem {
   private long sptr, addr, wmem;
   private int size;
+  public String type;
 
-  Mem(long s, long a, long w, int sz) {
+  Mem(long s, long a, long w, String t, int sz) {
     sptr = s;
     addr = a;
     wmem = w;
+    type = t;
     size = sz;
+    
   }
 
 }
