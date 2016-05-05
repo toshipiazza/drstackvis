@@ -84,14 +84,14 @@ void setup() {
     .setColor(color(128))
     .setColorBackground(color(255,100))
     .setColorForeground(color(255,100))
-    .setLineHeight(14);
+    .setLineHeight(14).setText("stdout:\n");
   stderrTextArea = cp5.addTextarea("stderr")
     .setPosition(280, 300)
     .setSize(300, 200)
     .setColor(color(128))
     .setColorBackground(color(255,100))
     .setColorForeground(color(255,100))
-    .setLineHeight(14);
+    .setLineHeight(14).setText("stderr:\n");
 
   JSONObject j = chooseFile();
   s = parseJSON(j);

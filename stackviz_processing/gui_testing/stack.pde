@@ -76,8 +76,7 @@ class Stack {
     if (next_tick == tick)
       return stack;
     else if (next_tick == mem.size()) {
-      // we're done
-      exit();
+      return stack; // WAHT DO?
     } else {
       ceil = mem.get(next_tick - 1).sptr;
       int new_size = calculateSize(base, ceil);
@@ -110,7 +109,7 @@ class Stack {
     }
 
     for ( ; i < byteStack.length; i += 8) {
-      String accum = "[" + translateIndex2Addr(i) + "] ";
+      String accum = "[" + String.format("%16X", translateIndex2Addr(i)) + "] ";
       for (int j = 0; j < 8; ++j) {
         accum += getMaybeValue(byteStack[i+j]);
       }
