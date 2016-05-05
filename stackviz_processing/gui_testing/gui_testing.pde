@@ -1,10 +1,15 @@
-//GUI ELEMENTS
+//Buttons
 PShape b_back; //back button
 boolean goBack = false; //bool that back button is hovered on
 PShape b_forward; //forward button
 boolean goFor = false; //bool that forward button is hovered on
 int b_BoxWidth = 80; //width of forward/back
 int b_BoxHeight = 35; //height of forward/back
+
+//Stdout, Stderr
+PShape STDOUT;
+PShape STDERR;
+int out_width = 350;
 
 
 //FORMATTING, TYPOGRAPHY AND THE LIKE
@@ -20,7 +25,13 @@ void setup(){
   b_forward = createShape(RECT, 265, 25, b_BoxWidth, b_BoxHeight,8); //center at (305,52.5)
   b_back.setStroke(false);
   b_forward.setStroke(false);
+  
+  //stdout, stderr
+  STDOUT = createShape(RECT, 525,25,out_width,out_width);
+  STDERR = createShape(RECT, 875-out_width, 35+out_width,out_width,100);
 }
+//stdout: 425,25, size of 350x350
+//stderr: 
 
 void draw(){
   update(mouseX,mouseY);
@@ -31,6 +42,8 @@ void draw(){
   shape(b_forward,0,0);
     text("Forward",269,50);
     fill(50,50,50);
+  shape(STDOUT,0,0);
+  shape(STDERR,0,0);
 }
 
 void update(int x, int y){
@@ -53,6 +66,8 @@ void mousePressed(){
     println("FORWARDS IN TIME");
   }
 }
+
+
 
 
 //hovering for rectangles (buttons, stack elements)
