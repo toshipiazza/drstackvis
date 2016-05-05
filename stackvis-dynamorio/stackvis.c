@@ -96,8 +96,10 @@ dereference_pointer(app_pc pc, ushort size)
     case 4: return *(uint32_t *) pc;
     case 8: return *(uint64_t *) pc;
     default:
-        DR_ASSERT(false);
-        return 0;
+#ifdef SHOW_RESULTS
+        dr_fprintf(STDERR, "~~DrStackVis~~ WARNING: Could not read write of size %d\n", size);
+#endif
+        return dereference_pointer(pc, 8);
     }
 }
 
