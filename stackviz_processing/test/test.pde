@@ -20,9 +20,8 @@ ControlP5 cp5;
     int out_width = 350;
 
   //FORMATTING, TYPOGRAPHY AND THE LIKE
-    PFont AvenirHeavy;
-    PFont AvenirHeavy14;
-    PFont AvenirBook;
+    PFont FiraR14;
+    PFont LatoH18;
 
 //integers to access things and data structure
   ArrayList<Time> TIME;
@@ -99,9 +98,8 @@ void setup(){
   size(800,800);
   background(245);
   //load fonts
-    AvenirHeavy = loadFont("AvenirHeavy-18.vlw");
-    AvenirHeavy14 = loadFont("AvenirHeavy-14.vlw");
-    AvenirBook = loadFont("AvenirBook-13.vlw");
+    FiraR14 = loadFont("FiraMono-14.vlw");
+    LatoH18 = loadFont("LatoHeavy-18.vlw");
   //creating back/forward buttons
     b_back = createShape(RECT, 25, 25, b_BoxWidth, b_BoxHeight,8); //center at (65,52.5)
     b_forward = createShape(RECT, 265, 25, b_BoxWidth, b_BoxHeight,8); //center at (305,52.5)
@@ -140,7 +138,7 @@ void draw(){
   //TODO   
  update(mouseX,mouseY); //DETECT WHERE THE MOUSE IS
   background(245);
-  textFont(AvenirHeavy,18); //print buttons
+  textFont(LatoH18,18); //print buttons
   shape(b_back,0,0);
     text("Back",44,50);
     fill(50,50,50);
@@ -161,7 +159,7 @@ void draw(){
     shape(toprint);
     
   
-    textFont(AvenirBook,14);
+    textFont(FiraR14,14);
     String string = StringQueue.get(i);
     text(string,45,y+14);
     y += 20;
@@ -172,7 +170,7 @@ void draw(){
   String stderror = "stderror";
   text(stderror,777-out_width, 777-out_width,out_width-2,out_width-27);
   
-  //stack
+  //stack - fits 35 items
   /*
   int y_val = 70;
   int colors = 100;
