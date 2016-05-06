@@ -226,12 +226,12 @@ void draw(){
   }
   
   for (int k=0; k<stdout_queue.size(); k++){
-    text(stdout_queue.get(k), 777-out_width, 52+out_itr);
+    text(stdout_queue.get(k), 780-out_width, 64+out_itr);
     out_itr += 15;
   }
   
   for (int l=0; l<stderr_queue.size(); l++){
-    text(stderr_queue.get(l), 777-out_width, 777-out_width+err_itr);
+    text(stderr_queue.get(l), 780-out_width, 790-out_width+err_itr);
     err_itr += 15;
   }
   
