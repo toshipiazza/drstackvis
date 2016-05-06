@@ -49,7 +49,7 @@ Stack parseJSON(JSONObject j) {
     JSONObject block = writes.getJSONObject(i);
     smem.add(new Mem(block.getLong("sptr"),
                      block.getLong("addr"),
-                     (long) block.getDouble("wmem"),
+                     block.getLong("wmem"),
                      block.getString("type"),
                      block.getInt("size")));
   }
@@ -182,14 +182,14 @@ void draw(){
     PShape toprint = new PShape();
     toprint = createShape(RECT,40,y,285,20);
     color to_color = 220;
-    textFont(FiraR14,14);
+    textFont(FiraR14,12);
     stroke(100);
     //get address to find type
     String string = StringQueue.get(i);  
     String[] parsed = split(string,' ');
     String address = parsed[0].replace("[","");
     address = address.replace("]","");
-    long ADDR = Long.valueOf(address).longValue();
+    long ADDR = Long.decode(address);
     
     for (int j=0; j<s.tick;j++){
       Mem m = s.mem.get(j);
@@ -212,17 +212,17 @@ void draw(){
   
   
   if (s.hasStdoutInPipe()){
-    String stdo = s.getStdoutString();
+    String stdo = new String(s.getStdoutInPipe());
+    println("GOT OUTPUT: " + stdo);
     stdout_queue.add(stdo);
     //add to list
   }
   
   if (s.hasStderrInPipe()){
-    String stde = s.getStderrString();
+    String stde = new String(s.getStderrInPipe());
+    println("GOT OUTPUT(e): " + stde);
     //add to list
     stderr_queue.add(stde);
-    
-    
   }
   
   for (int k=0; k<stdout_queue.size(); k++){

@@ -57,11 +57,11 @@ class Stack {
   }
 
   private int translateAddr2Index(long addr) {
-    return (int) (base - addr) - 8;
+    return (int) (base - addr) - 1;
   }
 
   private long translateIndex2Addr(int index) {
-    return (long) (base - index);
+    return (long) (base - index) - 8;
   }
 
   private Addr[] resizeStack(Addr[] stack, int new_size) {
@@ -113,7 +113,7 @@ class Stack {
     }
 
     for ( ; i < byteStack.length; i += 8) {
-      String accum = "[" + translateIndex2Addr(i) + "] ";
+      String accum = "[0x" + String.format("%016x", translateIndex2Addr(i)) + "] ";
       for (int j = 0; j < 8; ++j) {
         accum += getMaybeValue(byteStack[i+j]);
       }
@@ -124,7 +124,7 @@ class Stack {
 
   private String getMaybeValue(Stack.Addr addr) {
     if (addr.used == true)
-      return String.format("%02X", addr.value);
+      return String.format("%02x", addr.value);
     return "??";
   }
 
@@ -133,11 +133,9 @@ class Stack {
   }
 
   public byte[] getStdoutInPipe() {
-    return DatatypeConverter.parseBase64Binary(stdout.get(tick));
-  }
-  
-  public String getStdoutString(){
-    return stdout.get(tick);
+    String ret = stdout.get(tick);
+    stdout.remove(tick);
+    return DatatypeConverter.parseBase64Binary(ret);
   }
 
   public boolean hasStderrInPipe() {
@@ -145,11 +143,9 @@ class Stack {
   }
 
   public byte[] getStderrInPipe() {
-    return DatatypeConverter.parseBase64Binary(stderr.get(tick));
-  }
-  
-  public String getStderrString(){
-    return stderr.get(tick);
+    String ret = stderr.get(tick);
+    stderr.remove(tick);
+    return DatatypeConverter.parseBase64Binary(ret);
   }
 }
 // vim:foldmethod=syntax:foldlevel=0
