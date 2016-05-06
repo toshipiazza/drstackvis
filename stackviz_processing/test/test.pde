@@ -22,6 +22,9 @@ ControlP5 cp5;
   //FORMATTING, TYPOGRAPHY AND THE LIKE
     PFont FiraR14;
     PFont LatoH18;
+    PShape call;
+    PShape push;
+    PShape move;
 
 //integers to access things and data structure
   int current = 1;
@@ -30,6 +33,8 @@ ControlP5 cp5;
   Stack s;
   Textarea stderr, stdout;
   List<String> StringQueue = new ArrayList<String>();
+  ArrayList<String> stdout_queue = new ArrayList();
+  ArrayList<String> stderr_queue = new ArrayList();
   
 
 //start helper functions here
@@ -107,6 +112,9 @@ void setup(){
     b_forward.setStroke(false);
     b_back.setFill(color(#99DCC3));
     b_forward.setFill(color(#99DCC3));
+    call = createShape(RECT,0,0,10,10);
+    push = createShape(RECT,0,0,10,10);
+    move = createShape(RECT,0,0,10,10);
   //stdout, stderr
     STDOUT = createShape(RECT, 775-out_width,50,out_width,out_width-25);
     STDERR = createShape(RECT, 775-out_width, 775-out_width,out_width,out_width-25);
@@ -147,12 +155,28 @@ void draw(){
     fill(50,50,50);
   text("Write " + current + "/" + s.mem.size(), 120, 50);
   text("Stdout",425,45);
-  text("Stderr",425,345);
+  text("Stderr",425,420);
   shape(STDOUT);
   shape(STDERR);
+  color call_col = #ffd557;
+  call.setFill(call_col);
+  shape(call,425,775);
   
+  color push_col = #48e8ea;
+  push.setFill(push_col);
+  shape(push,550,775);
   
-  //stdout
+  color move_col = #f77d61;
+  move.setFill(move_col);
+  shape(move,725,775);
+  
+  textFont(FiraR14,14);
+  text("call",440,785);
+  text("push",565,785);
+  text("move",740,785);
+
+  
+  //stack
   int y = 70;
   for (int i=0; i<StringQueue.size();i++){
     PShape toprint = new PShape();
@@ -182,9 +206,37 @@ void draw(){
     
   }
   
-  //stderr
-  String stderror = "stderror";
-  text(stderror,777-out_width, 777-out_width,out_width-2,out_width-27);
+  //stdout and stderr
+  int out_itr = 0;
+  int err_itr = 0;
+  
+  
+  if (s.hasStdoutInPipe()){
+    String stdo = s.getStdoutString();
+    stdout_queue.add(stdo);
+    //add to list
+  }
+  
+  if (s.hasStderrInPipe()){
+    String stde = s.getStderrString();
+    //add to list
+    stderr_queue.add(stde);
+    
+    
+  }
+  
+  for (int k=0; k<stdout_queue.size(); k++){
+    text(stdout_queue.get(k), 777-out_width, 52+out_itr);
+    out_itr += 15;
+  }
+  
+  for (int l=0; l<stderr_queue.size(); l++){
+    text(stderr_queue.get(l), 777-out_width, 777-out_width+err_itr);
+    err_itr += 15;
+  }
+  
+  
+  
   
   //stack - fits 35 items
   /*

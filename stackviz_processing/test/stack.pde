@@ -135,6 +135,10 @@ class Stack {
   public byte[] getStdoutInPipe() {
     return DatatypeConverter.parseBase64Binary(stdout.get(tick));
   }
+  
+  public String getStdoutString(){
+    return stdout.get(tick);
+  }
 
   public boolean hasStderrInPipe() {
     return stderr.containsKey(tick);
@@ -142,6 +146,10 @@ class Stack {
 
   public byte[] getStderrInPipe() {
     return DatatypeConverter.parseBase64Binary(stderr.get(tick));
+  }
+  
+  public String getStderrString(){
+    return stderr.get(tick);
   }
 }
 // vim:foldmethod=syntax:foldlevel=0
