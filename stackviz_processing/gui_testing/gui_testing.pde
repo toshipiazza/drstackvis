@@ -18,7 +18,7 @@ Stack parseJSON(JSONObject j) {
     JSONObject block = writes.getJSONObject(i);
     smem.add(new Mem(block.getLong("sptr"),
                      block.getLong("addr"),
-                     (long) block.getDouble("wmem"),
+                     block.getLong("wmem"),
                      block.getInt("size")));
   }
 

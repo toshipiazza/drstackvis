@@ -55,7 +55,7 @@ class Stack {
   }
 
   private long translateIndex2Addr(int index) {
-    return (long) (base - index);
+    return (long) (base - index) - 8;
   }
 
   private Addr[] resizeStack(Addr[] stack, int new_size) {
@@ -89,7 +89,7 @@ class Stack {
           for (int j = 0; j < m.size; ++j) {
             stack[translateAddr2Index(m.addr + j)].used = true;
             stack[translateAddr2Index(m.addr + j)].value
-              = (byte) ((int) value & 0xFF);
+              = (byte) (value & (long) 0xFF);
             value >>= 8;
           }
         }
