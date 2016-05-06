@@ -139,13 +139,15 @@ void draw(){
  update(mouseX,mouseY); //DETECT WHERE THE MOUSE IS
   background(245);
   textFont(LatoH18,18); //print buttons
-  shape(b_back,0,0);
+  /*shape(b_back,0,0);
     text("Back",44,50);
-    fill(50,50,50);
+    fill(50,50,50);*/
   shape(b_forward,0,0);
     text("Forward",269,50);
     fill(50,50,50);
   text("Write " + current + "/" + s.mem.size(), 120, 50);
+  text("Stdout",425,45);
+  text("Stderr",425,345);
   shape(STDOUT);
   shape(STDERR);
   
@@ -157,7 +159,7 @@ void draw(){
     toprint = createShape(RECT,40,y,285,20);
     color to_color = 220;
     textFont(FiraR14,14);
-    
+    stroke(100);
     //get address to find type
     String string = StringQueue.get(i);  
     String[] parsed = split(string,' ');
@@ -165,7 +167,7 @@ void draw(){
     address = address.replace("]","");
     long ADDR = Long.valueOf(address).longValue();
     
-    for (int j=0; j<s.mem.size();j++){
+    for (int j=0; j<s.tick;j++){
       Mem m = s.mem.get(j);
       if (m.addr == ADDR){
         to_color = colorize(m.type);
@@ -218,11 +220,11 @@ color colorize(String type){
   }
   
   if (type.equals("push")){
-    return #81fbfc;
+    return #48e8ea;
   }
   
   if (type.equals("mov")){
-   return #f7b1a4; 
+   return #f77d61; 
   }
   
   return 220;
